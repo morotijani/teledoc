@@ -1,0 +1,235 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+
+enum DoctorStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  EXPIRED
+  GRACE_PERIOD
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum FileType {
+  LAB_RESULT
+  IMAGING
+  DOCTOR_NOTE
+  PRESCRIPTION
+}
+
+model User {
+  id           String    @id @default(uuid())
+  role         UserRole
+  fullName     String    @map("full_name")
+  email        String?   @unique
+  phoneNumber  String    @unique @map("phone_number")
+  passwordHash String    @map("password_hash")
+  avatarUrl    String?   @map("avatar_url")
+  fcmToken     String?   @map("fcm_token")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  doctorProfile        DoctorProfile?
+  doctorAppointments   Appointment[]        @relation("DoctorAppointments")
+  patientAppointments  Appointment[]        @relation("PatientAppointments")
+  availabilities       DoctorAvailability[]
+  patientPrescriptions Prescription[]       @relation("PatientPrescriptions")
+  doctorPrescriptions  Prescription[]       @relation("DoctorPrescriptions")
+  medicalRecords       MedicalRecord[]      @relation("PatientRecords")
+  uploadedRecords      MedicalRecord[]      @relation("UploaderRecords")
+  subscription         Subscription?
+  payments             PaymentTransaction[]
+  sentMessages         ChatMessage[]
+  verifiedDoctors      DoctorProfile[]      @relation("VerifiedByAdmin")
+
+  @@map("users")
+}
+
+model DoctorProfile {
+  id                  String        @id @default(uuid())
+  userId              String        @unique @map("user_id")
+  specialty           String
+  subSpecialty        String?       @map("sub_specialty")
+  licenseNumber       String        @unique @map("license_number")
+  hospitalAffiliation String?       @map("hospital_affiliation")
+  yearsOfExperience   Int           @default(0) @map("years_of_experience")
+  bio                 String?       @db.Text
+  consultationFee     Decimal       @default(0.00) @map("consultation_fee") @db.Decimal(10, 2)
+  documentUrls        Json          @default("[]") @map("document_urls")
+  verificationStatus  DoctorStatus  @default(PENDING) @map("verification_status")
+  rejectionReason     String?       @map("rejection_reason") @db.Text
+  verifiedAt          DateTime?     @map("verified_at")
+  verifiedById        String?       @map("verified_by")
+
+  user       User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verifiedBy User? @relation("VerifiedByAdmin", fields: [verifiedById], references: [id])
+
+  @@map("doctor_profiles")
+}
+
+model DoctorAvailability {
+  id                  String   @id @default(uuid())
+  doctorId            String   @map("doctor_id")
+  dayOfWeek           Int      @map("day_of_week") // 0 = Sunday, 6 = Saturday
+  startTime           String   @map("start_time") // HH:mm format
+  endTime             String   @map("end_time")   // HH:mm format
+  slotDurationMinutes Int      @default(30) @map("slot_duration_minutes")
+  isActive            Boolean  @default(true) @map("is_active")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  doctor User @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@map("doctor_availabilities")
+}
+
+model Appointment {
+  id                  String            @id @default(uuid())
+  patientId           String            @map("patient_id")
+  doctorId            String            @map("doctor_id")
+  scheduledStart      DateTime          @map("scheduled_start")
+  scheduledEnd        DateTime          @map("scheduled_end")
+  status              AppointmentStatus @default(CONFIRMED)
+  meetingChannelId    String            @unique @map("meeting_channel_id")
+  symptomsDescription String?           @map("symptoms_description") @db.Text
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+
+  patient      User          @relation("PatientAppointments", fields: [patientId], references: [id])
+  doctor       User          @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  consultation Consultation?
+  chatMessages ChatMessage[]
+
+  @@index([patientId, scheduledStart])
+  @@index([doctorId, scheduledStart])
+  @@map("appointments")
+}
+
+model Consultation {
+  id             String    @id @default(uuid())
+  appointmentId  String    @unique @map("appointment_id")
+  doctorNotes    String?   @map("doctor_notes") @db.Text
+  patientSummary String?   @map("patient_summary") @db.Text
+  diagnosis      String?   @db.Text
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  appointment   Appointment    @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  prescriptions Prescription[]
+
+  @@map("consultations")
+}
+
+model Prescription {
+  id             String   @id @default(uuid())
+  consultationId String   @map("consultation_id")
+  patientId      String   @map("patient_id")
+  doctorId       String   @map("doctor_id")
+  medications    Json     @map("medications") // Array of { drugName, dosage, frequency, duration, instructions }
+  pdfUrl         String?  @map("pdf_url")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  patient      User         @relation("PatientPrescriptions", fields: [patientId], references: [id])
+  doctor       User         @relation("DoctorPrescriptions", fields: [doctorId], references: [id])
+
+  @@map("prescriptions")
+}
+
+model MedicalRecord {
+  id           String   @id @default(uuid())
+  patientId    String   @map("patient_id")
+  uploadedById String   @map("uploaded_by")
+  title        String
+  fileType     FileType @map("file_type")
+  fileUrl      String   @map("file_url")
+  notes        String?  @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  patient    User @relation("PatientRecords", fields: [patientId], references: [id], onDelete: Cascade)
+  uploadedBy User @relation("UploaderRecords", fields: [uploadedById], references: [id])
+
+  @@map("medical_records")
+}
+
+model Subscription {
+  id                   String             @id @default(uuid())
+  patientId            String             @unique @map("patient_id")
+  status               SubscriptionStatus @default(TRIAL)
+  trialStartsAt        DateTime           @default(now()) @map("trial_starts_at")
+  trialEndsAt          DateTime           @map("trial_ends_at")
+  lastBilledAt         DateTime?          @map("last_billed_at")
+  nextBillingDue       DateTime?          @map("next_billing_due")
+  amountGhs            Decimal            @default(10.00) @map("amount_ghs") @db.Decimal(10, 2)
+  hubtelRecurringToken String?            @map("hubtel_recurring_token")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+
+  patient User @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model PaymentTransaction {
+  id                  String        @id @default(uuid())
+  patientId           String        @map("patient_id")
+  transactionRef      String        @unique @map("transaction_ref")
+  hubtelTransactionId String?       @map("hubtel_transaction_id")
+  amount              Decimal       @map("amount") @db.Decimal(10, 2)
+  channel             String?
+  status              PaymentStatus @default(PENDING)
+  rawResponse         Json?         @map("raw_response")
+  createdAt           DateTime      @default(now()) @map("created_at")
+
+  patient User @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("payment_transactions")
+}
+
+model ChatMessage {
+  id            String    @id @default(uuid())
+  appointmentId String    @map("appointment_id")
+  senderId      String    @map("sender_id")
+  message       String    @db.Text
+  attachmentUrl String?   @map("attachment_url")
+  readAt        DateTime? @map("read_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  sender      User        @relation(fields: [senderId], references: [id])
+
+  @@index([appointmentId, createdAt])
+  @@map("chat_messages")
+}
