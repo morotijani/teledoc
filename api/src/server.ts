@@ -75,7 +75,7 @@ server.listen(PORT, () => {
   console.log(`🏥 TeleDoc Ghana Backend API Server`);
   console.log(`🚀 Running on http://localhost:${PORT}`);
   console.log(`📡 WebSocket / Socket.io server active`);
-  console.log(`🗄️ Database: PostgreSQL (port 5433)`);
+  console.log(`🗄️ Database: PostgreSQL (port 5432)`);
   console.log(`====================================================`);
 });
 

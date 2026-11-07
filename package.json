@@ -4,19 +4,21 @@
   "private": true,
   "description": "TeleDoc Ghana - Telemedicine & Teleconsultation Platform",
   "workspaces": [
-    "apps/*",
+    "api",
+    "web",
+    "mobile",
     "packages/*"
   ],
   "scripts": {
-    "dev:api": "npm --prefix apps/api run dev",
-    "dev:admin": "npm --prefix apps/admin run dev",
-    "dev:mobile": "npm --prefix apps/mobile start",
-    "build:all": "npm run build --workspaces --if-present",
-    "db:migrate": "npm --prefix apps/api run prisma:migrate",
-    "db:seed": "npm --prefix apps/api run prisma:seed",
-    "db:studio": "npm --prefix apps/api run prisma:studio"
+    "dev:api": "npm --prefix api run dev",
+    "dev:web": "npm --prefix web run dev",
+    "dev:mobile": "npm --prefix mobile start",
+    "db:migrate": "npx prisma db push --schema=api/prisma/schema.prisma",
+    "db:seed": "npx ts-node-dev api/prisma/seed.ts",
+    "db:studio": "npx prisma studio --schema=api/prisma/schema.prisma"
   },
   "devDependencies": {
+    "react-refresh": "^0.14.2",
     "typescript": "^5.7.3"
   }
 }

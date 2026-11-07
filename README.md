@@ -4,152 +4,116 @@ A modern, production-ready Telehealth ecosystem connecting Ghanaian patients wit
 
 ---
 
-## 🏛 System Architecture & Topology
+## 📁 Project Directory Structure
 
-```
-┌─────────────────────────────────┐       ┌────────────────────────────────┐
-│   Patient & Doctor Mobile App   │       │   Super Admin Web Dashboard    │
-│      (Expo React Native)        │       │    (React + Vite + Tailwind)   │
-└────────────────┬────────────────┘       └───────────────┬────────────────┘
-                 │ HTTPS / WSS                            │ HTTPS
-                 └────────────────┬───────────────────────┘
-                                  ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│                        Node.js Core API (Express)                        │
-│                                                                          │
-│  • JWT Auth & Strict RBAC        • Doctor Discovery & Booking Engine     │
-│  • Agora RTC Video Token Minting • Socket.io Consultation Chat Server    │
-│  • Clinical Notes & e-Rx Sync    • Hubtel MoMo Recurring Paywall Engine  │
-└─────────────────────────────────┬────────────────────────────────────────┘
-                                  │
-                                  ▼
-                      ┌──────────────────────┐
-                      │    PostgreSQL 18     │
-                      │  (Port 5433, Prisma) │
-                      └──────────────────────┘
-```
-
----
-
-## 📦 Monorepo Directory Structure
+The project is structured with clean, dedicated directories at the root:
 
 ```text
 teledoc/
-├── apps/
-│   ├── api/                   # Core Backend REST API & Socket.io (Node/Express/Prisma)
-│   │   ├── prisma/            # PostgreSQL Schema & Seeder
-│   │   ├── src/
-│   │   │   ├── lib/           # Agora RTC, Socket.io, Storage & Push Notifications
-│   │   │   ├── middleware/    # Auth (JWT), RBAC & 90-Day Subscription Paywall
-│   │   │   ├── routes/        # Auth, Admin, Doctors, Appointments, Consultations, Billing
-│   │   │   └── server.ts      # HTTP & WebSocket Server
-│   │   └── package.json
-│   │
-│   ├── admin/                 # Super Admin Web Dashboard (React + Vite + Tailwind)
-│   │   ├── src/               # Doctor verification, Credential approval & Stats
-│   │   ├── dist/              # Production optimized web assets
-│   │   └── package.json
-│   │
-│   └── mobile/                # Expo React Native App (Patient & Doctor Workspace)
-│       ├── src/
-│       │   ├── api/           # API client with token interceptor
-│       │   ├── context/       # Auth & Subscription State Provider
-│       │   └── screens/       # Patient Discovery, Appointments, Room, e-Rx, Paywall, Doctor Clinical Dashboard
-│       └── package.json
+├── api/                   # Backend REST API & Socket.io (Node / Express / TypeScript / Prisma)
+│   ├── prisma/            # PostgreSQL Schema & Seed Script
+│   ├── src/               # Auth, Doctors, Appointments, Consultations, Billing, Agora, Socket.io
+│   ├── .env               # Port 5000, PostgreSQL 5432 connection
+│   └── package.json
+│
+├── web/                   # Super Admin Web Dashboard (React + Vite + Tailwind)
+│   ├── src/               # Doctor verification, Credential approval & Stats
+│   ├── dist/              # Production-ready web assets
+│   └── package.json
+│
+├── mobile/                # Expo React Native App (Patient App & Doctor Workspace)
+│   ├── src/               # Doctor Discovery, Slot Booking, Video Call Room, Prescriptions, Lab Reports
+│   ├── app.json
+│   └── package.json
 │
 ├── packages/
-│   └── shared/                # Shared TypeScript models, enums & DTOs
+│   └── shared/            # Shared TypeScript DTOs, models & enums
 │
 ├── scripts/
-│   ├── start-db.ps1           # Starts PostgreSQL 18 on port 5433
-│   ├── stop-db.ps1            # Stops PostgreSQL 18
-│   └── test-platform.ps1      # Automated 7-step End-to-End Verification
+│   └── test-platform.ps1  # Automated 7-step End-to-End Platform Verification
 │
-└── package.json               # Monorepo workspace configuration
+└── package.json           # Root workspace configuration
 ```
 
 ---
 
-## 🚀 Quick Start Guide
+## 🚀 How to Run the Project
 
-### 1. Start the PostgreSQL 18 Database
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\start-db.ps1
-```
-*(Runs on `127.0.0.1:5433`, database `teledoc`)*
+You can run each component directly from its folder:
 
-### 2. Start the Backend API Server
+### 1. Backend API Server
+Open a terminal in the project root:
 ```bash
-npm run dev:api
+cd api
+npm run dev
 ```
-*API runs at `http://localhost:5000` with WebSocket support at `ws://localhost:5000`.*
+* Runs on **`http://localhost:5000`**
+* Connected to your local PostgreSQL 18 on port **`5432`** (`teledoc` database)
+* WebSocket server active for live consultation chat
 
-### 3. Start the Super Admin Portal
+---
+
+### 2. Super Admin Web Dashboard
+Open a second terminal:
 ```bash
-npm --prefix apps/admin run dev
+cd web
+npm run dev
 ```
-*Accessible in browser at `http://localhost:5173`.*
+* Opens in browser at **`http://localhost:5173`**
+* Log in as Super Admin (`admin@teledoc.gh` / `Password123!`) to review doctor medical licenses and approve/reject applications.
 
-### 4. Start the Mobile Client App
+---
+
+### 3. Mobile App (Expo React Native)
+Open a third terminal:
 ```bash
-npm --prefix apps/mobile start
+cd mobile
+npx expo start
 ```
-*Runs Expo Dev Server. Press `a` for Android Emulator, `i` for iOS Simulator, or scan the QR code with the Expo Go app.*
+* Press **`a`** to open in Android Emulator
+* Press **`i`** to open in iOS Simulator
+* Press **`w`** to run in your browser (web mode)
+* Or scan the QR code using the **Expo Go** app on your physical Android or iPhone.
 
 ---
 
-## 🔑 Pre-Seeded Test Accounts
+## 🗄️ Viewing the Database in pgAdmin 4
 
-| Role | Name | Email / Phone | Password | Access Status |
-| :--- | :--- | :--- | :--- | :--- |
-| **Super Admin** | Nana Kwame | `admin@teledoc.gh` / `+233240000001` | `Password123!` | Full Admin Console Access |
-| **Approved Doctor** | Dr. Kwesi Mensah, MD | `dr.mensah@teledoc.gh` / `+233240000002` | `Password123!` | Verified Cardiologist (`MDC-GH-2018-9844`) |
-| **Pending Doctor** | Dr. Ama Boateng | `dr.boateng@teledoc.gh` / `+233240000003` | `Password123!` | Pediatrician (`PENDING` Super Admin Approval) |
-| **Patient** | Kwame Asante | `kwame.asante@gmail.com` / `+233240000004` | `Password123!` | Active (3-Month Free Trial Tier) |
+The database is integrated directly with your computer's system PostgreSQL 18 instance:
 
----
-
-## 🛡️ Subsystems & Features Breakdown
-
-### 1. Onboarding & Role-Based Access Control (RBAC)
-*   **Patient Registration:** Phone/Email signup instantly provisions an automatic **90-Day (3-Month) Free Trial** timestamped in PostgreSQL (`subscriptions.trial_ends_at`).
-*   **Doctor Registration:** Requires submission of Medical & Dental Council (MDC) license number, specialty, hospital affiliation, and credential documents. Status defaults to `PENDING`. Doctors cannot access patients or accept bookings until approved.
-*   **Super Admin Portal:** Review pending medical licenses and certificates. One-click **Approve** or **Reject** (with reason), sending instant push notifications to the doctor.
-
-### 2. Patient Telehealth Journey
-*   **Discovery & Filtering:** Search doctors by name, specialty (Cardiology, Pediatrics, GP, etc.), or hospital.
-*   **Appointment Booking:** Real-time slot selection with atomic conflict prevention. Guarded by the **Subscription Paywall Middleware**.
-*   **Agora HD Video/Audio Calls:** Dynamic token minting via `POST /api/v1/consultations/:id/agora-token`.
-*   **In-Platform Chat:** Low-latency Socket.io real-time chat with message persistence and typing indicators.
-*   **Lab Results & History:** Patients upload PDFs or images of blood tests and imaging to cloud storage.
-*   **Digital Prescriptions:** Instant synchronization of doctor-prescribed medications (drug, dosage, frequency, duration).
-
-### 3. Doctor Clinical Workspace
-*   **Appointment Dashboard:** Calendar and queue of upcoming, ongoing, and completed consultations.
-*   **Live Consultation Launcher:** Enter encrypted Agora video rooms directly from appointment cards.
-*   **Clinical Notes & e-Prescription:** Post-consultation documentation including formal diagnosis, private clinical notes, patient summary, and electronic prescription generation.
-*   **Availability Management:** Configurable weekly recurring availability hours.
-
-### 4. Subscription & Hubtel Monetization Engine
-*   **3-Month Free Tier:** Days 1 through 90 offer full, unrestricted access.
-*   **Paywall Guard (`requireActiveSubscription`):** After 90 days, booking actions return `HTTP 402 PAYMENT_REQUIRED`.
-*   **Local Payment Gateway (Hubtel):** Integrated with MTN Mobile Money, Telecel Cash (Vodafone), AT Money, and Visa/Mastercard for **10 GHS / month**.
-*   **Webhooks & Idempotency:** Secure callback handling via `POST /api/v1/webhooks/hubtel`.
+1. Open **pgAdmin 4** on your computer.
+2. In the left sidebar, expand **Servers** ➔ **PostgreSQL 18** (Port 5432).
+3. If prompted, your password is: `root`
+4. Right-click on **Databases** and click **Refresh**.
+5. You will see the **`teledoc`** database!
+6. Expand **`teledoc`** ➔ **Schemas** ➔ **public** ➔ **Tables** to see all tables:
+   * `users`
+   * `doctor_profiles`
+   * `doctor_availabilities`
+   * `appointments`
+   * `consultations`
+   * `prescriptions`
+   * `medical_records`
+   * `subscriptions`
+   * `payment_transactions`
+   * `chat_messages`
 
 ---
 
-## 🧪 Automated End-to-End Test Suite
+## 🔑 Pre-Seeded Accounts for Testing
 
-Run the complete 7-stage automated verification script at any time:
+| Role | Email / Phone | Password | Description |
+| :--- | :--- | :--- | :--- |
+| **Super Admin** | `admin@teledoc.gh` / `+233240000001` | `Password123!` | Manages doctor credential verification in the Web Dashboard |
+| **Approved Doctor** | `dr.mensah@teledoc.gh` / `+233240000002` | `Password123!` | Active Consultant Cardiologist (Korle-Bu Teaching Hospital) |
+| **Pending Doctor** | `dr.boateng@teledoc.gh` / `+233240000003` | `Password123!` | Pediatrician awaiting Super Admin verification |
+| **Patient** | `kwame.asante@gmail.com` / `+233240000004` | `Password123!` | Active 3-Month Free Trial (90 days remaining) |
+
+---
+
+## 🧪 Testing the Platform Automatically
+
+You can test all subsystems (Auth, 90-day trial calculation, doctor approvals, slot booking, Agora RTC token generation, Hubtel MoMo billing) at any time:
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\test-platform.ps1
 ```
-
-Verification stages:
-1. `API Health Check` (HTTP 200)
-2. `Patient Authentication & 90-day Trial Status Calculation`
-3. `Super Admin Verification Loop & Pending Queue`
-4. `Doctor Discovery & MDC License Attributes`
-5. `Patient Appointment Booking & Conflict Protection`
-6. `Agora WebRTC Dynamic Token Minting`
-7. `Hubtel Mobile Money 10 GHS Subscription Billing & Verification`

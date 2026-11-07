@@ -31,6 +31,7 @@ const Tab = createBottomTabNavigator();
 function PatientHomeStack() {
   return (
     <Stack.Navigator
+      id="PatientHomeStack"
       screenOptions={{
         headerStyle: { backgroundColor: '#059669' },
         headerTintColor: '#ffffff',
@@ -65,6 +66,7 @@ function PatientHomeStack() {
 function PatientAppointmentsStack() {
   return (
     <Stack.Navigator
+      id="PatientAppointmentsStack"
       screenOptions={{
         headerStyle: { backgroundColor: '#059669' },
         headerTintColor: '#ffffff',
@@ -94,6 +96,7 @@ function PatientAppointmentsStack() {
 function PatientTabs() {
   return (
     <Tab.Navigator
+      id="PatientTabs"
       screenOptions={({ route }) => ({
         tabBarActiveTintColor: '#059669',
         tabBarInactiveTintColor: '#94a3b8',
@@ -157,6 +160,7 @@ function PatientTabs() {
 function DoctorStack() {
   return (
     <Stack.Navigator
+      id="DoctorStack"
       screenOptions={{
         headerStyle: { backgroundColor: '#0f172a' },
         headerTintColor: '#ffffff',
@@ -190,7 +194,7 @@ function DoctorStack() {
 // Authentication Stack
 function AuthStack() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator id="AuthStack" screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="RegisterPatient" component={RegisterPatientScreen} />
       <Stack.Screen name="RegisterDoctor" component={RegisterDoctorScreen} />
