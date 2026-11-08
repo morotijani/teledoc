@@ -70,10 +70,10 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 const io = setupSocketServer(server);
 
 // Start Server
-server.listen(PORT, () => {
+server.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`====================================================`);
   console.log(`🏥 TeleDoc Ghana Backend API Server`);
-  console.log(`🚀 Running on http://localhost:${PORT}`);
+  console.log(`🚀 Running on http://0.0.0.0:${PORT} (LAN: http://192.168.0.112:${PORT})`);
   console.log(`📡 WebSocket / Socket.io server active`);
   console.log(`🗄️ Database: PostgreSQL (port 5432)`);
   console.log(`====================================================`);

@@ -1,12 +1,44 @@
 import axios from 'axios';
-import { Platform } from 'react-native';
+import { Platform, NativeModules } from 'react-native';
+import Constants from 'expo-constants';
 
-// In Android emulator, 10.0.2.2 connects to host machine's localhost
-// In iOS simulator, localhost connects directly to host
-const DEFAULT_API_URL =
-  Platform.OS === 'android' ? 'http://10.0.2.2:5000/api/v1' : 'http://localhost:5000/api/v1';
+const getHostIp = (): string => {
+  // 1. Try Expo hostUri (populated in Expo Go, e.g. "192.168.0.112:8081")
+  const hostUri =
+    Constants.expoConfig?.hostUri ||
+    (Constants as any).manifest2?.extra?.expoClient?.hostUri ||
+    (Constants as any).manifest?.debuggerHost;
 
-export const API_URL = DEFAULT_API_URL;
+  if (hostUri) {
+    const ip = hostUri.split(':')[0];
+    if (ip && ip !== 'localhost' && ip !== '127.0.0.1') {
+      return ip;
+    }
+  }
+
+  // 2. Try NativeModules.SourceCode.scriptURL (the URL the JS bundle was downloaded from)
+  const scriptURL = NativeModules.SourceCode?.scriptURL;
+  if (scriptURL) {
+    const host = scriptURL.split('://')[1]?.split('/')[0]?.split(':')[0];
+    if (host && host !== 'localhost' && host !== '127.0.0.1') {
+      return host;
+    }
+  }
+
+  // 3. Fallback for physical devices connected via local Wi-Fi
+  return '192.168.0.112';
+};
+
+const resolveApiBaseUrl = (): string => {
+  if (Platform.OS === 'web') {
+    return 'http://localhost:5000/api/v1';
+  }
+
+  const hostIp = getHostIp();
+  return `http://${hostIp}:5000/api/v1`;
+};
+
+export const API_URL = resolveApiBaseUrl();
 
 export const apiClient = axios.create({
   baseURL: API_URL,

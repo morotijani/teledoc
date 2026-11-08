@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { apiClient, setApiAuthToken } from '../api/client';
+import { apiClient, setApiAuthToken, API_URL } from '../api/client';
 
 export type UserRole = 'PATIENT' | 'DOCTOR' | 'ADMIN';
 
@@ -67,9 +67,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       handleAuthSuccess(res.data);
       return { success: true };
     } catch (err: any) {
+      const errorMsg =
+        err.response?.data?.message ||
+        (err.code === 'ECONNABORTED'
+          ? `Connection timed out connecting to ${API_URL}`
+          : err.message?.includes('Network Error')
+          ? `Network error: Cannot reach server at ${API_URL}. Ensure your phone and PC are on the same Wi-Fi.`
+          : `Login failed: ${err.message || 'Please check credentials'}`);
       return {
         success: false,
-        message: err.response?.data?.message || 'Login failed. Please verify credentials.',
+        message: errorMsg,
       };
     } finally {
       setIsLoading(false);
