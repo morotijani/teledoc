@@ -99,6 +99,21 @@ export function setupSocketServer(httpServer: HttpServer): SocketIOServer {
         if (!socket.user || !appointmentId || !message?.trim()) return;
 
         try {
+          const appointment = await prisma.appointment.findUnique({
+            where: { id: appointmentId },
+            select: { patientId: true, doctorId: true },
+          });
+
+          if (
+            !appointment ||
+            (appointment.patientId !== socket.user.id &&
+              appointment.doctorId !== socket.user.id &&
+              socket.user.role !== UserRole.ADMIN)
+          ) {
+            socket.emit('error_message', { message: 'Unauthorized to send message in this room' });
+            return;
+          }
+
           const chatMessage = await prisma.chatMessage.create({
             data: {
               appointmentId,

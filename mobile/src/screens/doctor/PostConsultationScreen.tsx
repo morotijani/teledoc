@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,17 +13,42 @@ import { apiClient } from '../../api/client';
 
 export default function PostConsultationScreen({ route, navigation }: any) {
   const { appointment } = route.params;
+  const existingConsultation = appointment?.consultation;
+  const existingRx = existingConsultation?.prescriptions?.[0]?.medications;
 
-  const [diagnosis, setDiagnosis] = useState('');
-  const [patientSummary, setPatientSummary] = useState('');
-  const [doctorNotes, setDoctorNotes] = useState('');
+  const [diagnosis, setDiagnosis] = useState(existingConsultation?.diagnosis || '');
+  const [patientSummary, setPatientSummary] = useState(existingConsultation?.patientSummary || '');
+  const [doctorNotes, setDoctorNotes] = useState(existingConsultation?.doctorNotes || '');
 
-  // Prescription items state
-  const [medications, setMedications] = useState<any[]>([
-    { drugName: '', dosage: '', frequency: 'Twice daily', duration: '7 days', instructions: '' },
-  ]);
+  const [medications, setMedications] = useState<any[]>(
+    Array.isArray(existingRx) && existingRx.length > 0
+      ? existingRx
+      : [{ drugName: '', dosage: '', frequency: 'Twice daily', duration: '7 days', instructions: '' }]
+  );
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    fetchLatestConsultation();
+  }, []);
+
+  const fetchLatestConsultation = async () => {
+    try {
+      const res = await apiClient.get(`/consultations/${appointment.id}`);
+      const c = res.data.consultation;
+      if (c) {
+        if (c.diagnosis) setDiagnosis(c.diagnosis);
+        if (c.patientSummary) setPatientSummary(c.patientSummary);
+        if (c.doctorNotes) setDoctorNotes(c.doctorNotes);
+        const rxMeds = c.prescriptions?.[c.prescriptions.length - 1]?.medications;
+        if (Array.isArray(rxMeds) && rxMeds.length > 0) {
+          setMedications(rxMeds);
+        }
+      }
+    } catch {
+      // No existing consultation record yet — start fresh
+    }
+  };
 
   const handleAddMedication = () => {
     setMedications([
@@ -39,13 +64,16 @@ export default function PostConsultationScreen({ route, navigation }: any) {
 
   const handleMedChange = (index: number, field: string, value: string) => {
     const updated = [...medications];
-    updated[index][field] = value;
+    updated[index] = { ...updated[index], [field]: value };
     setMedications(updated);
   };
 
   const handleSubmit = async () => {
     if (!diagnosis.trim() || !patientSummary.trim()) {
-      Alert.alert('Required Information', 'Diagnosis and Patient Summary are required to complete this session.');
+      Alert.alert(
+        'Required Information',
+        'Diagnosis and Patient Summary are required to complete this session.'
+      );
       return;
     }
 
@@ -59,7 +87,7 @@ export default function PostConsultationScreen({ route, navigation }: any) {
       });
 
       // 2. Issue digital prescription if any medications have a drug name
-      const validMeds = medications.filter((m) => m.drugName.trim().length > 0);
+      const validMeds = medications.filter((m) => m.drugName && m.drugName.trim().length > 0);
       if (validMeds.length > 0) {
         await apiClient.post(`/consultations/${appointment.id}/prescriptions`, {
           medications: validMeds,
@@ -72,7 +100,10 @@ export default function PostConsultationScreen({ route, navigation }: any) {
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } catch (err: any) {
-      Alert.alert('Submission Error', err.response?.data?.message || 'Failed to save post-consultation documentation.');
+      Alert.alert(
+        'Submission Error',
+        err.response?.data?.message || 'Failed to save post-consultation documentation.'
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -111,10 +142,10 @@ export default function PostConsultationScreen({ route, navigation }: any) {
           numberOfLines={3}
         />
 
-        <Text style={styles.label}>Confidential Doctor Notes (Private)</Text>
+        <Text style={styles.label}>Confidential Doctor Notes (Private - Doctors Only)</Text>
         <TextInput
           style={[styles.input, styles.textArea]}
-          placeholder="Confidential clinician notes and follow-up markers (only visible to medical staff)..."
+          placeholder="Confidential clinician notes and follow-up markers (never shown to patients)..."
           placeholderTextColor="#94a3b8"
           value={doctorNotes}
           onChangeText={setDoctorNotes}
@@ -196,7 +227,7 @@ export default function PostConsultationScreen({ route, navigation }: any) {
               style={styles.input}
               placeholder="e.g. Take with breakfast"
               placeholderTextColor="#94a3b8"
-              value={med.instructions}
+              value={med.instructions || ''}
               onChangeText={(val) => handleMedChange(index, 'instructions', val)}
             />
           </View>

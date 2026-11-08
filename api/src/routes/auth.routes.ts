@@ -4,11 +4,15 @@ import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { UserRole, DoctorStatus, SubscriptionStatus } from '@prisma/client';
-import { authenticateToken } from '../middleware/auth.middleware';
+import { authenticateToken, JWT_SECRET } from '../middleware/auth.middleware';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'teledoc_super_secure_jwt_secret_ghana_telemed_2026';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
+// Brute-force protection: track failed login attempts per IP
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const MAX_LOGIN_ATTEMPTS = 15;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
 const patientRegisterSchema = z.object({
   fullName: z.string().min(2, 'Full name must be at least 2 characters'),
@@ -206,6 +210,17 @@ router.post('/register-doctor', async (req: Request, res: Response) => {
  */
 router.post('/login', async (req: Request, res: Response) => {
   try {
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+    const nowMs = Date.now();
+    const attempt = loginAttempts.get(clientIp);
+    if (attempt && nowMs < attempt.resetAt && attempt.count >= MAX_LOGIN_ATTEMPTS) {
+      res.status(429).json({
+        success: false,
+        message: 'Too many failed login attempts. Please wait 15 minutes before trying again.',
+      });
+      return;
+    }
+
     const { identifier, password } = loginSchema.parse(req.body);
 
     const user = await prisma.user.findFirst({
@@ -219,15 +234,28 @@ router.post('/login', async (req: Request, res: Response) => {
     });
 
     if (!user) {
+      const prev = loginAttempts.get(clientIp);
+      loginAttempts.set(clientIp, {
+        count: prev && nowMs < prev.resetAt ? prev.count + 1 : 1,
+        resetAt: nowMs + LOGIN_WINDOW_MS,
+      });
       res.status(401).json({ success: false, message: 'Invalid phone/email or password.' });
       return;
     }
 
     const isValidPassword = await bcrypt.compare(password, user.passwordHash);
     if (!isValidPassword) {
+      const prev = loginAttempts.get(clientIp);
+      loginAttempts.set(clientIp, {
+        count: prev && nowMs < prev.resetAt ? prev.count + 1 : 1,
+        resetAt: nowMs + LOGIN_WINDOW_MS,
+      });
       res.status(401).json({ success: false, message: 'Invalid phone/email or password.' });
       return;
     }
+
+    // Clear failed attempts on successful login
+    loginAttempts.delete(clientIp);
 
     const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, {
       expiresIn: '7d',
@@ -345,6 +373,49 @@ router.get('/me', authenticateToken, async (req: Request, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Internal server error.' });
+  }
+});
+
+const updateProfileSchema = z.object({
+  fullName: z.string().min(2).optional(),
+  email: z.string().email().optional().or(z.literal('')),
+  phoneNumber: z.string().min(9).optional(),
+});
+
+/**
+ * Update Current User Profile
+ */
+router.put('/profile', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const data = updateProfileSchema.parse(req.body);
+
+    const updated = await prisma.user.update({
+      where: { id: req.user!.id },
+      data: {
+        ...(data.fullName ? { fullName: data.fullName } : {}),
+        ...(data.email !== undefined ? { email: data.email || null } : {}),
+        ...(data.phoneNumber ? { phoneNumber: data.phoneNumber } : {}),
+      },
+    });
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully.',
+      user: {
+        id: updated.id,
+        role: updated.role,
+        fullName: updated.fullName,
+        phoneNumber: updated.phoneNumber,
+        email: updated.email,
+        avatarUrl: updated.avatarUrl,
+      },
+    });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ success: false, errors: error.errors });
+      return;
+    }
+    res.status(500).json({ success: false, message: 'Failed to update profile.' });
   }
 });
 

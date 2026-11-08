@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma';
 import { UserRole } from '@prisma/client';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'teledoc_super_secure_jwt_secret_ghana_telemed_2026';
+export const JWT_SECRET = process.env.JWT_SECRET || 'teledoc_super_secure_jwt_secret_ghana_telemed_2026';
 
 export interface AuthenticatedUser {
   id: string;

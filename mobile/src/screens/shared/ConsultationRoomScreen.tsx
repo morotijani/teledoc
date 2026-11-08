@@ -46,9 +46,15 @@ export default function ConsultationRoomScreen({ route, navigation }: any) {
 
   const initializeConsultation = async () => {
     try {
-      // 1. Fetch Agora Dynamic Token from Backend
-      const res = await apiClient.post(`/consultations/${appointmentId}/agora-token`);
+      // 1. Fetch Agora Dynamic Token & Historical Chat Messages in parallel
+      const [res, msgsRes] = await Promise.all([
+        apiClient.post(`/consultations/${appointmentId}/agora-token`),
+        apiClient.get(`/consultations/${appointmentId}/messages`).catch(() => ({ data: { messages: [] } })),
+      ]);
       setAgoraSession(res.data);
+      if (msgsRes.data?.messages) {
+        setMessages(msgsRes.data.messages);
+      }
 
       // 2. Initialize Socket.io Chat Connection
       const socketServerUrl = API_URL.replace('/api/v1', '');
@@ -63,7 +69,10 @@ export default function ConsultationRoomScreen({ route, navigation }: any) {
       });
 
       socket.on('new_message', (msg: any) => {
-        setMessages((prev) => [...prev, msg]);
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        });
       });
 
       socketRef.current = socket;

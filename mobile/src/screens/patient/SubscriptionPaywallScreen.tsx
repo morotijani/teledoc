@@ -47,27 +47,44 @@ export default function SubscriptionPaywallScreen() {
 
       const clientReference = res.data.clientReference;
 
-      // Automatically verify transaction
-      const verifyRes = await apiClient.get(`/billing/verify-transaction/${clientReference}`);
-
-      if (verifyRes.data.status === 'SUCCESS' || verifyRes.data.status === 'PAID') {
-        await refreshProfile();
-        await fetchStatus();
-        Alert.alert(
-          '🎉 Subscription Active!',
-          'Your 10 GHS monthly TeleDoc subscription has been activated via Mobile Money. You have unlimited teleconsultation booking access.'
-        );
-      } else {
-        Alert.alert(
-          'Payment Prompt Sent',
-          `A prompt has been sent to ${phone}. Please enter your Mobile Money PIN on your phone to complete the 10 GHS payment.`,
-          [{ text: 'OK', onPress: () => fetchStatus() }]
-        );
-      }
+      Alert.alert(
+        '📲 MoMo USSD Prompt Sent',
+        `A 10.00 GHS Mobile Money debit prompt has been sent to ${phone}. Authorize the prompt on your handset, then tap "Confirm Payment" below.`,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+            onPress: () => setIsProcessing(false),
+          },
+          {
+            text: 'Confirm Payment',
+            onPress: async () => {
+              try {
+                const verifyRes = await apiClient.get(
+                  `/billing/verify-transaction/${clientReference}`
+                );
+                if (verifyRes.data.status === 'SUCCESS' || verifyRes.data.status === 'PAID') {
+                  await refreshProfile();
+                  await fetchStatus();
+                  Alert.alert(
+                    '🎉 Subscription Active!',
+                    'Your 10 GHS monthly TeleDoc subscription has been activated via Mobile Money. You have unlimited teleconsultation booking access.'
+                  );
+                } else {
+                  Alert.alert('Payment Pending', 'Your transaction is still awaiting confirmation.');
+                }
+              } catch (vErr: any) {
+                Alert.alert('Verification Error', 'Could not verify Mobile Money payment.');
+              } finally {
+                setIsProcessing(false);
+              }
+            },
+          },
+        ]
+      );
     } catch (err: any) {
-      Alert.alert('Payment Error', err.response?.data?.message || 'Could not initiate payment.');
-    } finally {
       setIsProcessing(false);
+      Alert.alert('Payment Error', err.response?.data?.message || 'Could not initiate payment.');
     }
   };
 

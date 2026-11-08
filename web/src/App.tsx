@@ -14,7 +14,7 @@ import {
   Stethoscope,
 } from 'lucide-react';
 
-const API_BASE = 'http://localhost:5000/api/v1';
+const API_BASE = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5000/api/v1';
 
 interface DoctorProfile {
   id: string;
@@ -145,6 +145,22 @@ export default function App() {
       await fetchAdminData();
     } catch (err: any) {
       alert(err.response?.data?.message || 'Approval failed');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleSuspend = async (doctor: DoctorProfile) => {
+    setActionLoadingId(doctor.id);
+    try {
+      await axios.post(
+        `${API_BASE}/admin/doctors/${doctor.id}/suspend`,
+        { reason: 'Suspended via Super Admin Registry' },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      await fetchAdminData();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Suspension failed');
     } finally {
       setActionLoadingId(null);
     }
@@ -531,6 +547,7 @@ export default function App() {
                 <option value="">All Verification Statuses</option>
                 <option value="APPROVED">Approved Only</option>
                 <option value="PENDING">Pending Only</option>
+                <option value="SUSPENDED">Suspended Only</option>
                 <option value="REJECTED">Rejected Only</option>
               </select>
             </div>
@@ -571,15 +588,26 @@ export default function App() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        {doc.verificationStatus === 'PENDING' ? (
+                        {doc.verificationStatus === 'APPROVED' ? (
                           <button
-                            onClick={() => handleApprove(doc)}
-                            className="text-xs font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-lg"
+                            onClick={() => handleSuspend(doc)}
+                            disabled={actionLoadingId === doc.id}
+                            className="text-xs font-bold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
                           >
-                            Approve
+                            {actionLoadingId === doc.id ? 'Updating...' : 'Suspend'}
                           </button>
                         ) : (
-                          <span className="text-[11px] text-slate-400">Verified</span>
+                          <button
+                            onClick={() => handleApprove(doc)}
+                            disabled={actionLoadingId === doc.id}
+                            className="text-xs font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                          >
+                            {actionLoadingId === doc.id
+                              ? 'Updating...'
+                              : doc.verificationStatus === 'PENDING'
+                              ? 'Approve'
+                              : 'Reactivate'}
+                          </button>
                         )}
                       </td>
                     </tr>

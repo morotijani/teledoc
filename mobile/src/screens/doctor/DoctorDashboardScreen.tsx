@@ -7,8 +7,11 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
+  Modal,
+  Linking,
+  Alert,
 } from 'react-native';
-import { apiClient } from '../../api/client';
+import { apiClient, API_URL } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 
 export default function DoctorDashboardScreen({ navigation }: any) {
@@ -17,9 +20,19 @@ export default function DoctorDashboardScreen({ navigation }: any) {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Patient Lab Records Modal State
+  const [recordsModalVisible, setRecordsModalVisible] = useState(false);
+  const [selectedPatient, setSelectedPatient] = useState<any>(null);
+  const [patientRecords, setPatientRecords] = useState<any[]>([]);
+  const [isLoadingRecords, setIsLoadingRecords] = useState(false);
+
   useEffect(() => {
     fetchDoctorAppointments();
-  }, []);
+    const unsubscribe = navigation.addListener('focus', () => {
+      fetchDoctorAppointments();
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   const fetchDoctorAppointments = async () => {
     try {
@@ -30,6 +43,35 @@ export default function DoctorDashboardScreen({ navigation }: any) {
     } finally {
       setIsLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  const handleOpenPatientRecords = async (patient: any) => {
+    setSelectedPatient(patient);
+    setRecordsModalVisible(true);
+    setIsLoadingRecords(true);
+    try {
+      const res = await apiClient.get(`/records/patient/${patient.id}`);
+      setPatientRecords(res.data.records || []);
+    } catch (err: any) {
+      Alert.alert(
+        'Records Error',
+        err.response?.data?.message || 'Could not load patient medical records.'
+      );
+      setPatientRecords([]);
+    } finally {
+      setIsLoadingRecords(false);
+    }
+  };
+
+  const handleOpenDocument = async (rawUrl: string) => {
+    if (!rawUrl) return;
+    const baseServer = API_URL.replace('/api/v1', '');
+    const resolvedUrl = rawUrl.replace(/http:\/\/localhost:\d+/, baseServer);
+    try {
+      await Linking.openURL(resolvedUrl);
+    } catch {
+      Alert.alert('Cannot Open File', `Document URL: ${resolvedUrl}`);
     }
   };
 
@@ -93,18 +135,27 @@ export default function DoctorDashboardScreen({ navigation }: any) {
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity
-            style={styles.notesBtn}
-            onPress={() =>
-              navigation.navigate('PostConsultation', {
-                appointment: item,
-              })
-            }
-          >
-            <Text style={styles.notesBtnText}>
-              {isCompleted ? '📝 Review Notes & Rx' : '📋 Write Notes & Issue Rx'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.secondaryActionRow}>
+            <TouchableOpacity
+              style={[styles.notesBtn, { flex: 1 }]}
+              onPress={() =>
+                navigation.navigate('PostConsultation', {
+                  appointment: item,
+                })
+              }
+            >
+              <Text style={styles.notesBtnText}>
+                {isCompleted ? '📝 Review Notes & Rx' : '📋 Write Notes & Rx'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.labFilesBtn}
+              onPress={() => handleOpenPatientRecords(item.patient)}
+            >
+              <Text style={styles.labFilesBtnText}>🧪 Lab Files</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     );
@@ -177,6 +228,74 @@ export default function DoctorDashboardScreen({ navigation }: any) {
           }
         />
       )}
+
+      {/* Patient Uploaded Lab Results & Medical Files Modal */}
+      <Modal visible={recordsModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>
+                  {selectedPatient?.fullName}'s Medical Files
+                </Text>
+                <Text style={styles.modalSub}>
+                  Lab reports, imaging & clinical records
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.closeBtn}
+                onPress={() => setRecordsModalVisible(false)}
+              >
+                <Text style={styles.closeBtnText}>Close ✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {isLoadingRecords ? (
+              <View style={{ padding: 30, alignItems: 'center' }}>
+                <ActivityIndicator color="#059669" />
+              </View>
+            ) : (
+              <FlatList
+                data={patientRecords}
+                keyExtractor={(r) => r.id}
+                style={{ maxHeight: 360 }}
+                contentContainerStyle={{ gap: 10, paddingVertical: 8 }}
+                renderItem={({ item: rec }) => (
+                  <View style={styles.recordItem}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.recordTitle}>
+                        {rec.fileType === 'LAB_RESULT' ? '🧪 ' : '📄 '}
+                        {rec.title}
+                      </Text>
+                      <Text style={styles.recordMeta}>
+                        {rec.fileType} • {new Date(rec.createdAt).toLocaleDateString()}
+                      </Text>
+                      {rec.notes ? (
+                        <Text style={styles.recordNotes}>Note: {rec.notes}</Text>
+                      ) : null}
+                    </View>
+                    {rec.fileUrl ? (
+                      <TouchableOpacity
+                        style={styles.openDocBtn}
+                        onPress={() => handleOpenDocument(rec.fileUrl)}
+                      >
+                        <Text style={styles.openDocBtnText}>Open ↗</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                )}
+                ListEmptyComponent={
+                  <View style={{ padding: 24, alignItems: 'center' }}>
+                    <Text style={{ color: '#64748b', fontSize: 13 }}>
+                      No lab results or medical documents uploaded by this patient yet.
+                    </Text>
+                  </View>
+                }
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -348,6 +467,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
   },
+  secondaryActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   notesBtn: {
     backgroundColor: '#f1f5f9',
     borderRadius: 12,
@@ -356,6 +479,21 @@ const styles = StyleSheet.create({
   },
   notesBtnText: {
     color: '#334155',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  labFilesBtn: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  labFilesBtnText: {
+    color: '#0284c7',
     fontSize: 12,
     fontWeight: '800',
   },
@@ -388,5 +526,78 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    gap: 12,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#0f172a',
+  },
+  modalSub: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  closeBtn: {
+    padding: 6,
+  },
+  closeBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  recordItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    gap: 10,
+  },
+  recordTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  recordMeta: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  recordNotes: {
+    fontSize: 11,
+    color: '#475569',
+    marginTop: 4,
+  },
+  openDocBtn: {
+    backgroundColor: '#059669',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  openDocBtnText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '800',
   },
 });

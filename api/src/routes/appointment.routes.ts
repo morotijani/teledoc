@@ -158,7 +158,13 @@ router.get('/my', authenticateToken, async (req: Request, res: Response) => {
           },
         },
         consultation: {
-          include: {
+          select: {
+            id: true,
+            appointmentId: true,
+            patientSummary: true,
+            diagnosis: true,
+            createdAt: true,
+            updatedAt: true,
             prescriptions: true,
           },
         },
@@ -226,9 +232,21 @@ router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
       return;
     }
 
+    // Strip confidential doctorNotes if requested by a patient
+    const sanitizedAppointment =
+      req.user!.role === UserRole.PATIENT && appointment.consultation
+        ? {
+            ...appointment,
+            consultation: {
+              ...appointment.consultation,
+              doctorNotes: undefined,
+            },
+          }
+        : appointment;
+
     res.json({
       success: true,
-      appointment,
+      appointment: sanitizedAppointment,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch appointment.' });

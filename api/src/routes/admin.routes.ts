@@ -183,6 +183,44 @@ router.post('/doctors/:id/reject', async (req: Request, res: Response) => {
 });
 
 /**
+ * Suspend Doctor Credentials
+ */
+router.post('/doctors/:id/suspend', async (req: Request, res: Response) => {
+  try {
+    const doctorProfileId = String(req.params.id);
+    const { reason } = req.body;
+
+    const doctorProfile = await prisma.doctorProfile.findUnique({
+      where: { id: doctorProfileId },
+      include: { user: true },
+    });
+
+    if (!doctorProfile) {
+      res.status(404).json({ success: false, message: 'Doctor profile not found.' });
+      return;
+    }
+
+    const updatedProfile = await prisma.doctorProfile.update({
+      where: { id: doctorProfileId },
+      data: {
+        verificationStatus: DoctorStatus.SUSPENDED,
+        rejectionReason: reason?.trim() || 'Suspended by Super Administrator.',
+        verifiedById: req.user!.id,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: `Dr. ${doctorProfile.user.fullName} has been suspended.`,
+      doctor: { ...updatedProfile, user: doctorProfile.user },
+    });
+  } catch (error) {
+    console.error('[Admin Suspend Doctor Error]', error);
+    res.status(500).json({ success: false, message: 'Failed to suspend doctor.' });
+  }
+});
+
+/**
  * Admin Metrics Overview Dashboard
  */
 router.get('/stats', async (req: Request, res: Response) => {

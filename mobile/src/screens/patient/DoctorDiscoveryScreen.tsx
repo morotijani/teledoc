@@ -13,7 +13,7 @@ import { apiClient } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 
 export default function DoctorDiscoveryScreen({ navigation }: any) {
-  const { user, subscription } = useAuth();
+  const { user, subscription, logout } = useAuth();
   const [doctors, setDoctors] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [selectedSpecialty, setSelectedSpecialty] = useState('');
@@ -97,14 +97,22 @@ export default function DoctorDiscoveryScreen({ navigation }: any) {
       <View style={styles.topBanner}>
         <View style={styles.welcomeRow}>
           <Text style={styles.welcomeText}>Hello, {user?.fullName}</Text>
-          <TouchableOpacity
-            style={styles.trialPill}
-            onPress={() => navigation.navigate('SubscriptionPaywall')}
-          >
-            <Text style={styles.trialPillText}>
-              🎁 {subscription?.trialDaysRemaining ?? 90}d Trial Left
-            </Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity
+              style={styles.trialPill}
+              onPress={() => navigation.getParent()?.navigate('Plan & MoMo')}
+            >
+              <Text style={styles.trialPillText}>
+                🎁 {subscription?.trialDaysRemaining ?? 90}d Trial
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.trialPill, { backgroundColor: '#065f46' }]}
+              onPress={logout}
+            >
+              <Text style={styles.trialPillText}>Sign Out</Text>
+            </TouchableOpacity>
+          </View>
         </View>
         <Text style={styles.topSubtext}>Search Ghana's accredited doctors and book instant slots.</Text>
       </View>

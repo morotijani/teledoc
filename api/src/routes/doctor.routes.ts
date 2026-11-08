@@ -117,6 +117,30 @@ const availabilitySchema = z.object({
 });
 
 /**
+ * Doctor: Get My Weekly Availability Slots
+ */
+router.get(
+  '/my/availabilities',
+  authenticateToken,
+  requireRole([UserRole.DOCTOR]),
+  async (req: Request, res: Response) => {
+    try {
+      const availabilities = await prisma.doctorAvailability.findMany({
+        where: { doctorId: req.user!.id },
+        orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
+      });
+
+      res.json({
+        success: true,
+        availabilities,
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, message: 'Failed to fetch availabilities.' });
+    }
+  }
+);
+
+/**
  * Doctor: Update Weekly Availability Slots
  */
 router.post(

@@ -17,7 +17,11 @@ export default function MyAppointmentsScreen({ navigation }: any) {
 
   useEffect(() => {
     fetchMyAppointments();
-  }, []);
+    const unsubscribe = navigation.addListener('focus', () => {
+      fetchMyAppointments();
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   const fetchMyAppointments = async () => {
     try {
@@ -76,6 +80,17 @@ export default function MyAppointmentsScreen({ navigation }: any) {
           <Text style={styles.symptomsText} numberOfLines={2}>
             Symptoms: {item.symptomsDescription}
           </Text>
+        ) : null}
+
+        {isCompleted && item.consultation ? (
+          <View style={styles.summaryBox}>
+            <Text style={styles.summaryTitle}>
+              🩺 Diagnosis: {item.consultation.diagnosis || 'General Consultation'}
+            </Text>
+            {item.consultation.patientSummary ? (
+              <Text style={styles.summaryBody}>{item.consultation.patientSummary}</Text>
+            ) : null}
+          </View>
         ) : null}
 
         {/* Action Buttons */}
@@ -137,7 +152,7 @@ export default function MyAppointmentsScreen({ navigation }: any) {
               <Text style={styles.emptyText}>You do not have any upcoming doctor teleconsultations.</Text>
               <TouchableOpacity
                 style={styles.findDoctorBtn}
-                onPress={() => navigation.navigate('DoctorDiscovery')}
+                onPress={() => navigation.getParent()?.navigate('Find Doctors')}
               >
                 <Text style={styles.findDoctorBtnText}>Browse Available Doctors</Text>
               </TouchableOpacity>
@@ -225,6 +240,25 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginTop: 8,
     fontStyle: 'italic',
+  },
+  summaryBox: {
+    marginTop: 10,
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    borderRadius: 10,
+    padding: 10,
+  },
+  summaryTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#047857',
+  },
+  summaryBody: {
+    fontSize: 11,
+    color: '#065f46',
+    marginTop: 3,
+    lineHeight: 16,
   },
   actionsRow: {
     marginTop: 14,

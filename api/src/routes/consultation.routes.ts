@@ -220,6 +220,53 @@ router.post(
 );
 
 /**
+ * Get Chat Message History for an Appointment
+ */
+router.get('/:appointmentId/messages', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const appointmentId = String(req.params.appointmentId);
+    const userId = req.user!.id;
+
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      select: { patientId: true, doctorId: true },
+    });
+
+    if (!appointment) {
+      res.status(404).json({ success: false, message: 'Appointment not found.' });
+      return;
+    }
+
+    if (
+      appointment.patientId !== userId &&
+      appointment.doctorId !== userId &&
+      req.user!.role !== UserRole.ADMIN
+    ) {
+      res.status(403).json({ success: false, message: 'Unauthorized to view chat messages.' });
+      return;
+    }
+
+    const messages = await prisma.chatMessage.findMany({
+      where: { appointmentId },
+      include: {
+        sender: {
+          select: { id: true, fullName: true, role: true },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    res.json({
+      success: true,
+      count: messages.length,
+      messages,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to retrieve chat messages.' });
+  }
+});
+
+/**
  * Get Consultation & Prescription Details
  */
 router.get('/:appointmentId', authenticateToken, async (req: Request, res: Response) => {
@@ -244,9 +291,24 @@ router.get('/:appointmentId', authenticateToken, async (req: Request, res: Respo
       return;
     }
 
+    // Verify caller is patient, treating doctor, or admin
+    if (
+      req.user!.role !== UserRole.ADMIN &&
+      consultation.appointment.patientId !== req.user!.id &&
+      consultation.appointment.doctorId !== req.user!.id
+    ) {
+      res.status(403).json({ success: false, message: 'Unauthorized to view this consultation.' });
+      return;
+    }
+
+    const sanitizedConsultation =
+      req.user!.role === UserRole.PATIENT
+        ? { ...consultation, doctorNotes: undefined }
+        : consultation;
+
     res.json({
       success: true,
-      consultation,
+      consultation: sanitizedConsultation,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to retrieve consultation details.' });

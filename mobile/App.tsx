@@ -18,6 +18,7 @@ import MyAppointmentsScreen from './src/screens/patient/MyAppointmentsScreen';
 import PrescriptionsScreen from './src/screens/patient/PrescriptionsScreen';
 import LabResultsScreen from './src/screens/patient/LabResultsScreen';
 import SubscriptionPaywallScreen from './src/screens/patient/SubscriptionPaywallScreen';
+import PatientProfileScreen from './src/screens/patient/PatientProfileScreen';
 
 import DoctorDashboardScreen from './src/screens/doctor/DoctorDashboardScreen';
 import PostConsultationScreen from './src/screens/doctor/PostConsultationScreen';
@@ -118,6 +119,7 @@ function PatientTabs() {
           else if (route.name === 'Prescriptions') icon = '💊';
           else if (route.name === 'Lab Tests') icon = '🧪';
           else if (route.name === 'Plan & MoMo') icon = '💳';
+          else if (route.name === 'Profile') icon = '👤';
 
           return <Text style={{ fontSize: focused ? 20 : 18 }}>{icon}</Text>;
         },
@@ -148,6 +150,16 @@ function PatientTabs() {
         component={SubscriptionPaywallScreen}
         options={{
           headerShown: true,
+          headerStyle: { backgroundColor: '#059669' },
+          headerTintColor: '#fff',
+        }}
+      />
+      <Tab.Screen
+        name="Profile"
+        component={PatientProfileScreen}
+        options={{
+          headerShown: true,
+          title: 'My Profile & Account',
           headerStyle: { backgroundColor: '#059669' },
           headerTintColor: '#fff',
         }}

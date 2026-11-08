@@ -9,8 +9,10 @@ import {
   TextInput,
   Modal,
   Alert,
+  Linking,
 } from 'react-native';
-import { apiClient } from '../../api/client';
+import * as DocumentPicker from 'expo-document-picker';
+import { apiClient, API_URL } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 
 export default function LabResultsScreen() {
@@ -21,6 +23,7 @@ export default function LabResultsScreen() {
   const [title, setTitle] = useState('');
   const [fileType, setFileType] = useState('LAB_RESULT');
   const [notes, setNotes] = useState('');
+  const [pickedFile, setPickedFile] = useState<{ uri: string; name: string; mimeType: string } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
@@ -39,7 +42,30 @@ export default function LabResultsScreen() {
     }
   };
 
-  const handleSimulatedUpload = async () => {
+  const handlePickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        setPickedFile({
+          uri: asset.uri,
+          name: asset.name || 'medical_document.pdf',
+          mimeType: asset.mimeType || 'application/pdf',
+        });
+        if (!title.trim() && asset.name) {
+          setTitle(asset.name.replace(/\.[^/.]+$/, ''));
+        }
+      }
+    } catch (err) {
+      Alert.alert('File Picker Error', 'Could not open document picker on this device.');
+    }
+  };
+
+  const handleUpload = async () => {
     if (!title.trim()) {
       Alert.alert('Required', 'Please enter a title for this lab report.');
       return;
@@ -47,22 +73,21 @@ export default function LabResultsScreen() {
 
     setIsUploading(true);
     try {
-      // In a physical device, expo-document-picker picks the file.
-      // Here we create the test multipart submission to /records/upload
       const formData = new FormData();
       formData.append('title', title.trim());
       formData.append('fileType', fileType);
       formData.append('notes', notes.trim());
 
-      // Mock file attachment
-      const mockFile = {
-        uri: 'file:///sample_lab_blood_test.pdf',
-        name: `${title.replace(/\s+/g, '_')}.pdf`,
-        type: 'application/pdf',
-      };
-      formData.append('file', mockFile as any);
+      if (pickedFile) {
+        formData.append('file', {
+          uri: pickedFile.uri,
+          name: pickedFile.name,
+          type: pickedFile.mimeType,
+        } as any);
+      } else {
+        formData.append('useSampleFile', 'true');
+      }
 
-      // Post using client with multipart header
       await apiClient.post('/records/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
@@ -70,12 +95,24 @@ export default function LabResultsScreen() {
       setModalVisible(false);
       setTitle('');
       setNotes('');
+      setPickedFile(null);
       fetchRecords();
-      Alert.alert('Success', 'Lab document uploaded to cloud storage.');
+      Alert.alert('Success', 'Medical document uploaded and linked to your profile.');
     } catch (err: any) {
       Alert.alert('Upload Error', err.response?.data?.message || 'Failed to upload document.');
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleOpenDocument = async (rawUrl: string) => {
+    if (!rawUrl) return;
+    const baseServer = API_URL.replace('/api/v1', '');
+    const resolvedUrl = rawUrl.replace(/http:\/\/localhost:\d+/, baseServer);
+    try {
+      await Linking.openURL(resolvedUrl);
+    } catch {
+      Alert.alert('Cannot Open File', `Document URL: ${resolvedUrl}`);
     }
   };
 
@@ -92,6 +129,15 @@ export default function LabResultsScreen() {
             {item.fileType} • {new Date(item.createdAt).toLocaleDateString()}
           </Text>
         </View>
+
+        {item.fileUrl ? (
+          <TouchableOpacity
+            style={styles.openFileBtn}
+            onPress={() => handleOpenDocument(item.fileUrl)}
+          >
+            <Text style={styles.openFileBtnText}>Open ↗</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {item.notes ? <Text style={styles.notesText}>Note: {item.notes}</Text> : null}
@@ -146,10 +192,19 @@ export default function LabResultsScreen() {
             <Text style={styles.modalTitle}>Upload Medical Document</Text>
             <Text style={styles.modalDesc}>Supported formats: PDF, JPG, PNG (Max 25 MB)</Text>
 
+            <Text style={styles.label}>Select File from Device</Text>
+            <TouchableOpacity style={styles.filePickerBtn} onPress={handlePickDocument}>
+              <Text style={styles.filePickerBtnText}>
+                {pickedFile
+                  ? `📎 Selected: ${pickedFile.name}`
+                  : '📂 Choose PDF or Image from Device (or leave blank for Sample PDF)'}
+              </Text>
+            </TouchableOpacity>
+
             <Text style={styles.label}>Document Title</Text>
             <TextInput
               style={styles.input}
-              placeholder="e.g. Complete Blood Count (CBC) - Sept 2026"
+              placeholder="e.g. Complete Blood Count (CBC) - Nov 2026"
               placeholderTextColor="#94a3b8"
               value={title}
               onChangeText={setTitle}
@@ -184,7 +239,10 @@ export default function LabResultsScreen() {
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={styles.cancelBtn}
-                onPress={() => setModalVisible(false)}
+                onPress={() => {
+                  setModalVisible(false);
+                  setPickedFile(null);
+                }}
                 disabled={isUploading}
               >
                 <Text style={styles.cancelBtnText}>Cancel</Text>
@@ -192,7 +250,7 @@ export default function LabResultsScreen() {
 
               <TouchableOpacity
                 style={[styles.submitUploadBtn, isUploading && styles.btnDisabled]}
-                onPress={handleSimulatedUpload}
+                onPress={handleUpload}
                 disabled={isUploading}
               >
                 {isUploading ? (
@@ -281,6 +339,19 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginTop: 2,
   },
+  openFileBtn: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  openFileBtnText: {
+    color: '#0284c7',
+    fontSize: 11,
+    fontWeight: '800',
+  },
   notesText: {
     fontSize: 12,
     color: '#475569',
@@ -357,6 +428,22 @@ const styles = StyleSheet.create({
   modalDesc: {
     fontSize: 12,
     color: '#64748b',
+  },
+  filePickerBtn: {
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+  },
+  filePickerBtnText: {
+    color: '#047857',
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
   },
   label: {
     fontSize: 11,
