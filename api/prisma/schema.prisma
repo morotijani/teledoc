@@ -233,3 +233,13 @@ model ChatMessage {
   @@index([appointmentId, createdAt])
   @@map("chat_messages")
 }
+
+model Specialty {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?  @db.Text
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("specialties")
+}

@@ -221,6 +221,81 @@ router.post('/doctors/:id/suspend', async (req: Request, res: Response) => {
 });
 
 /**
+ * List All Specialties (Admin)
+ */
+router.get('/specialties', async (_req: Request, res: Response) => {
+  try {
+    const specialties = await prisma.specialty.findMany({
+      orderBy: { name: 'asc' },
+    });
+
+    res.json({
+      success: true,
+      count: specialties.length,
+      specialties,
+    });
+  } catch (error) {
+    console.error('[Admin Specialties Error]', error);
+    res.status(500).json({ success: false, message: 'Failed to retrieve specialties.' });
+  }
+});
+
+/**
+ * Create a New Medical Specialty (Admin)
+ */
+router.post('/specialties', async (req: Request, res: Response) => {
+  try {
+    const { name, description } = req.body;
+
+    if (!name || !String(name).trim()) {
+      res.status(400).json({ success: false, message: 'Specialty name is required.' });
+      return;
+    }
+
+    const cleanName = String(name).trim();
+    const existing = await prisma.specialty.findFirst({
+      where: { name: { equals: cleanName, mode: 'insensitive' } },
+    });
+
+    if (existing) {
+      res.status(409).json({ success: false, message: 'This specialty already exists.' });
+      return;
+    }
+
+    const specialty = await prisma.specialty.create({
+      data: {
+        name: cleanName,
+        description: description ? String(description).trim() : null,
+        isActive: true,
+      },
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `Specialty "${specialty.name}" added successfully.`,
+      specialty,
+    });
+  } catch (error) {
+    console.error('[Admin Create Specialty Error]', error);
+    res.status(500).json({ success: false, message: 'Failed to create specialty.' });
+  }
+});
+
+/**
+ * Delete a Medical Specialty (Admin)
+ */
+router.delete('/specialties/:id', async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id);
+    await prisma.specialty.delete({ where: { id } });
+    res.json({ success: true, message: 'Specialty removed.' });
+  } catch (error) {
+    console.error('[Admin Delete Specialty Error]', error);
+    res.status(500).json({ success: false, message: 'Failed to remove specialty.' });
+  }
+});
+
+/**
  * Admin Metrics Overview Dashboard
  */
 router.get('/stats', async (req: Request, res: Response) => {

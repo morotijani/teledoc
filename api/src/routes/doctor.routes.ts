@@ -8,6 +8,27 @@ import { z } from 'zod';
 const router = Router();
 
 /**
+ * Public: List Active Medical Specialties (Managed by Super Admin)
+ */
+router.get('/specialties', async (_req: Request, res: Response) => {
+  try {
+    const specialties = await prisma.specialty.findMany({
+      where: { isActive: true },
+      orderBy: { name: 'asc' },
+    });
+
+    res.json({
+      success: true,
+      count: specialties.length,
+      specialties,
+    });
+  } catch (error) {
+    console.error('[Specialties List Error]', error);
+    res.status(500).json({ success: false, message: 'Failed to load specialties.' });
+  }
+});
+
+/**
  * Public Doctor Discovery: Search & Filter by name, specialty, or hospital
  */
 router.get('/', async (req: Request, res: Response) => {

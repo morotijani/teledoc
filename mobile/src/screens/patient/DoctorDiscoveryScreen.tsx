@@ -19,16 +19,38 @@ import { COLORS, FONTS, RADIUS, SHADOWS } from '../../theme/theme';
 export default function DoctorDiscoveryScreen({ navigation }: any) {
   const { user, subscription, logout } = useAuth();
   const [doctors, setDoctors] = useState<any[]>([]);
+  const [specialties, setSpecialties] = useState<string[]>([
+    'All',
+    'General Practice',
+    'Cardiology',
+    'Pediatrics',
+    'Obstetrics',
+    'Dermatology',
+  ]);
   const [search, setSearch] = useState('');
   const [selectedSpecialty, setSelectedSpecialty] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const specialties = ['All', 'General Practice', 'Cardiology', 'Pediatrics', 'Obstetrics', 'Dermatology'];
+  useEffect(() => {
+    fetchSpecialties();
+  }, []);
 
   useEffect(() => {
     fetchDoctors();
   }, [selectedSpecialty]);
+
+  const fetchSpecialties = async () => {
+    try {
+      const res = await apiClient.get('/doctors/specialties');
+      const names = (res.data.specialties || []).map((s: any) => s.name);
+      if (names.length > 0) {
+        setSpecialties(['All', ...names]);
+      }
+    } catch {
+      // Keep fallback list
+    }
+  };
 
   const fetchDoctors = async () => {
     setIsLoading(true);

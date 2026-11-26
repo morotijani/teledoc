@@ -186,6 +186,31 @@ const ADDITIONAL_CLINICIANS: SeedDoctor[] = [
 async function main() {
   console.log('Starting TeleDoc Ghana database seeding...');
 
+  const DEFAULT_SPECIALTIES = [
+    { name: 'General Practice', description: 'Primary care, routine checkups, and family health' },
+    { name: 'Cardiology', description: 'Heart, hypertension, and cardiovascular care' },
+    { name: 'Pediatrics', description: 'Child, infant, and adolescent healthcare' },
+    { name: 'Obstetrics', description: 'Maternal health, antenatal care, and gynecology' },
+    { name: 'Dermatology', description: 'Skin, hair, and tropical dermatology' },
+    { name: 'Internal Medicine', description: 'Adult chronic conditions, diabetes, and endocrinology' },
+    { name: 'Psychiatry & Mental Health', description: 'Anxiety, sleep, stress, and behavioral wellness' },
+    { name: 'Ophthalmology', description: 'Eye care, vision, and glaucoma management' },
+    { name: 'Orthopedics', description: 'Joint, bone, spine, and sports injury care' },
+  ];
+
+  for (const spec of DEFAULT_SPECIALTIES) {
+    await prisma.specialty.upsert({
+      where: { name: spec.name },
+      update: {},
+      create: {
+        name: spec.name,
+        description: spec.description,
+        isActive: true,
+      },
+    });
+  }
+  console.log(`Specialties ready: ${DEFAULT_SPECIALTIES.length}`);
+
   const passwordHash = await bcrypt.hash('Password123!', 10);
 
   // 1. Super Admin Account

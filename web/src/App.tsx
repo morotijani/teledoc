@@ -12,6 +12,9 @@ import {
   Search,
   CreditCard,
   Stethoscope,
+  Plus,
+  Trash2,
+  Tags,
 } from 'lucide-react';
 
 const API_BASE = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5000/api/v1';
@@ -59,9 +62,15 @@ export default function App() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Dashboard Data State
-  const [activeTab, setActiveTab] = useState<'pending' | 'doctors' | 'stats'>('pending');
+  const [activeTab, setActiveTab] = useState<'pending' | 'doctors' | 'specialties'>('pending');
   const [pendingDoctors, setPendingDoctors] = useState<DoctorProfile[]>([]);
   const [allDoctors, setAllDoctors] = useState<DoctorProfile[]>([]);
+  const [specialties, setSpecialties] = useState<
+    { id: string; name: string; description?: string | null; isActive: boolean }[]
+  >([]);
+  const [newSpecialtyName, setNewSpecialtyName] = useState('');
+  const [newSpecialtyDesc, setNewSpecialtyDesc] = useState('');
+  const [isAddingSpecialty, setIsAddingSpecialty] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -82,17 +91,19 @@ export default function App() {
     try {
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
-      const [pendingRes, allRes, statsRes, meRes] = await Promise.all([
+      const [pendingRes, allRes, statsRes, meRes, specRes] = await Promise.all([
         axios.get(`${API_BASE}/admin/doctors/pending`, config),
         axios.get(`${API_BASE}/admin/doctors`, config),
         axios.get(`${API_BASE}/admin/stats`, config),
         axios.get(`${API_BASE}/auth/me`, config),
+        axios.get(`${API_BASE}/admin/specialties`, config).catch(() => ({ data: { specialties: [] } })),
       ]);
 
       setPendingDoctors(pendingRes.data.doctors || []);
       setAllDoctors(allRes.data.doctors || []);
       setStats(statsRes.data.stats || null);
       setAdminUser(meRes.data.user);
+      setSpecialties(specRes.data.specialties || []);
     } catch (err: any) {
       console.error('Failed to load admin data:', err);
       if (err.response?.status === 401 || err.response?.status === 403) {
@@ -183,6 +194,41 @@ export default function App() {
       alert(err.response?.data?.message || 'Rejection failed');
     } finally {
       setActionLoadingId(null);
+    }
+  };
+
+  const handleAddSpecialty = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSpecialtyName.trim()) return;
+    setIsAddingSpecialty(true);
+    try {
+      await axios.post(
+        `${API_BASE}/admin/specialties`,
+        {
+          name: newSpecialtyName.trim(),
+          description: newSpecialtyDesc.trim() || undefined,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setNewSpecialtyName('');
+      setNewSpecialtyDesc('');
+      await fetchAdminData();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to add specialty');
+    } finally {
+      setIsAddingSpecialty(false);
+    }
+  };
+
+  const handleDeleteSpecialty = async (id: string, name: string) => {
+    if (!window.confirm(`Remove "${name}" from active specialties?`)) return;
+    try {
+      await axios.delete(`${API_BASE}/admin/specialties/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      await fetchAdminData();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to delete specialty');
     }
   };
 
@@ -394,6 +440,18 @@ export default function App() {
           >
             <Stethoscope className="w-4 h-4" />
             <span>Doctor Registry ({allDoctors.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('specialties')}
+            className={`px-4 py-2 rounded-xl text-sm font-bold flex items-center space-x-2 transition ${
+              activeTab === 'specialties'
+                ? 'bg-teal-600 text-white shadow-md shadow-teal-600/20'
+                : 'text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            <Tags className="w-4 h-4" />
+            <span>Specialties ({specialties.length})</span>
           </button>
         </div>
 
@@ -614,6 +672,100 @@ export default function App() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: Medical Specialties Manager */}
+        {activeTab === 'specialties' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Add New Specialty Form */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 h-fit">
+              <h2 className="text-base font-black text-slate-900">Add Medical Specialty</h2>
+              <p className="text-xs text-slate-500 mt-1 mb-4">
+                Specialties added here immediately appear on the mobile Clinician Application form and Patient Doctor Discovery filter.
+              </p>
+
+              <form onSubmit={handleAddSpecialty} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Specialty Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newSpecialtyName}
+                    onChange={(e) => setNewSpecialtyName(e.target.value)}
+                    placeholder="e.g. Neurology, ENT, Urology"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Short Description
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={newSpecialtyDesc}
+                    onChange={(e) => setNewSpecialtyDesc(e.target.value)}
+                    placeholder="Brief clinical focus for patients and applicants..."
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isAddingSpecialty}
+                  className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-xs shadow-sm transition flex items-center justify-center space-x-1.5 disabled:opacity-50"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{isAddingSpecialty ? 'Adding...' : 'Add Specialty'}</span>
+                </button>
+              </form>
+            </div>
+
+            {/* Active Specialties List */}
+            <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-black text-slate-900">
+                    Active Specialties ({specialties.length})
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Synced live to both Patient filters and Doctor sign-up wizard.
+                  </p>
+                </div>
+              </div>
+
+              <div className="divide-y divide-slate-100">
+                {specialties.map((spec) => (
+                  <div
+                    key={spec.id}
+                    className="px-6 py-4 flex items-center justify-between hover:bg-slate-50/70 transition"
+                  >
+                    <div>
+                      <div className="font-bold text-sm text-slate-900">{spec.name}</div>
+                      {spec.description && (
+                        <div className="text-xs text-slate-500 mt-0.5">{spec.description}</div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => handleDeleteSpecialty(spec.id, spec.name)}
+                      className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                      title="Remove specialty"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+
+                {specialties.length === 0 && (
+                  <div className="p-10 text-center text-xs text-slate-400">
+                    No specialties configured yet. Add one on the left.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
