@@ -7,7 +7,9 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { apiClient } from '../../api/client';
+import { COLORS, FONTS, RADIUS, SHADOWS } from '../../theme/theme';
 
 export default function PrescriptionsScreen() {
   const [prescriptions, setPrescriptions] = useState<any[]>([]);
@@ -49,11 +51,14 @@ export default function PrescriptionsScreen() {
   const renderItem = ({ item }: { item: any }) => (
     <View style={styles.card}>
       <View style={styles.rxHeader}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.doctorName}>Prescribed by {item.doctorName || 'Doctor'}</Text>
           <Text style={styles.specialty}>{item.specialty || 'General Practice'}</Text>
         </View>
-        <Text style={styles.rxDate}>{new Date(item.date).toLocaleDateString()}</Text>
+        <View style={styles.datePill}>
+          <MaterialIcons name="event" size={12} color={COLORS.textMuted} />
+          <Text style={styles.rxDate}>{new Date(item.date).toLocaleDateString()}</Text>
+        </View>
       </View>
 
       <View style={styles.medsList}>
@@ -61,14 +66,14 @@ export default function PrescriptionsScreen() {
           item.medications.map((med: any, idx: number) => (
             <View key={idx} style={styles.medItem}>
               <View style={styles.medBullet}>
-                <Text style={styles.medBulletText}>Rx</Text>
+                <MaterialIcons name="medication" size={16} color={COLORS.primary} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.drugName}>
                   {med.drugName} <Text style={styles.dosage}>({med.dosage})</Text>
                 </Text>
                 <Text style={styles.instructions}>
-                  {med.frequency} • {med.duration}
+                  {med.frequency} · {med.duration}
                 </Text>
                 {med.instructions ? (
                   <Text style={styles.specialNotes}>Note: {med.instructions}</Text>
@@ -82,7 +87,8 @@ export default function PrescriptionsScreen() {
       </View>
 
       <View style={styles.rxFooter}>
-        <Text style={styles.footerNote}>✓ Digitally signed via TeleDoc Ghana e-Prescription System</Text>
+        <MaterialIcons name="verified" size={14} color={COLORS.success} />
+        <Text style={styles.footerNote}>Digitally signed via TeleDoc Ghana e-Prescription</Text>
       </View>
     </View>
   );
@@ -91,7 +97,7 @@ export default function PrescriptionsScreen() {
     <View style={styles.container}>
       {isLoading && !refreshing ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#059669" />
+          <ActivityIndicator size="large" color={COLORS.primary} />
           <Text style={styles.loadingText}>Fetching digital prescriptions...</Text>
         </View>
       ) : (
@@ -100,6 +106,7 @@ export default function PrescriptionsScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -107,15 +114,18 @@ export default function PrescriptionsScreen() {
                 setRefreshing(true);
                 fetchPrescriptions();
               }}
-              colors={['#059669']}
+              tintColor={COLORS.primary}
+              colors={[COLORS.primary]}
             />
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyIcon}>💊</Text>
+              <View style={styles.emptyIconCircle}>
+                <MaterialIcons name="medication" size={30} color={COLORS.textSubtle} />
+              </View>
               <Text style={styles.emptyTitle}>No Prescriptions Yet</Text>
               <Text style={styles.emptyText}>
-                When a doctor issues an electronic prescription after a consultation, it will appear here instantly.
+                Electronic prescriptions issued after your consultations will appear here automatically.
               </Text>
             </View>
           }
@@ -128,48 +138,53 @@ export default function PrescriptionsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.bg,
   },
   listContent: {
-    padding: 16,
-    gap: 12,
+    padding: 18,
+    gap: 14,
   },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
-    padding: 16,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
+    padding: 18,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 5,
-    elevation: 2,
+    borderColor: COLORS.border,
+    ...SHADOWS.card,
   },
   rxHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-    paddingBottom: 10,
+    borderBottomColor: COLORS.surfaceMuted,
+    paddingBottom: 12,
     marginBottom: 12,
   },
   doctorName: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0f172a',
+    fontSize: 15,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   specialty: {
-    fontSize: 11,
-    color: '#0284c7',
-    fontWeight: '700',
-    marginTop: 1,
+    fontSize: 12,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.info,
+    marginTop: 2,
+  },
+  datePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.bg,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: RADIUS.sm,
   },
   rxDate: {
     fontSize: 11,
-    color: '#94a3b8',
-    fontWeight: '600',
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textMuted,
   },
   medsList: {
     gap: 10,
@@ -177,62 +192,61 @@ const styles = StyleSheet.create({
   medItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 10,
-    backgroundColor: '#f8fafc',
-    padding: 10,
-    borderRadius: 12,
+    gap: 12,
+    backgroundColor: COLORS.bg,
+    padding: 12,
+    borderRadius: RADIUS.md,
   },
   medBullet: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#ecfdf5',
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: COLORS.primarySoft,
     borderWidth: 1,
-    borderColor: '#a7f3d0',
+    borderColor: COLORS.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  medBulletText: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#059669',
-  },
   drugName: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0f172a',
+    fontSize: 14,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   dosage: {
-    color: '#059669',
-    fontWeight: '700',
+    color: COLORS.primaryDark,
+    fontFamily: FONTS.semiBold,
   },
   instructions: {
-    fontSize: 11,
-    color: '#475569',
+    fontSize: 12,
+    fontFamily: FONTS.medium,
+    color: COLORS.textSecondary,
     marginTop: 2,
   },
   specialNotes: {
-    fontSize: 10,
-    color: '#64748b',
-    fontStyle: 'italic',
-    marginTop: 2,
+    fontSize: 11,
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
+    marginTop: 3,
   },
   emptyMeds: {
     fontSize: 12,
-    color: '#94a3b8',
-    fontStyle: 'italic',
+    fontFamily: FONTS.regular,
+    color: COLORS.textSubtle,
   },
   rxFooter: {
-    marginTop: 12,
-    paddingTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 14,
+    paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
+    borderTopColor: COLORS.surfaceMuted,
   },
   footerNote: {
-    fontSize: 10,
-    color: '#10b981',
-    fontWeight: '700',
-    textAlign: 'center',
+    fontSize: 11,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.success,
   },
   loadingContainer: {
     flex: 1,
@@ -241,25 +255,32 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 10,
-    color: '#64748b',
+    color: COLORS.textMuted,
     fontSize: 13,
+    fontFamily: FONTS.medium,
   },
   emptyContainer: {
     alignItems: 'center',
     padding: 40,
   },
-  emptyIcon: {
-    fontSize: 40,
-    marginBottom: 8,
+  emptyIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: COLORS.surfaceMuted,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
   },
   emptyTitle: {
     fontSize: 16,
-    fontWeight: '800',
-    color: '#334155',
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   emptyText: {
-    fontSize: 12,
-    color: '#94a3b8',
+    fontSize: 13,
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
     marginTop: 4,
     textAlign: 'center',
     lineHeight: 18,

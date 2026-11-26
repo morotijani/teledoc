@@ -1,13 +1,37 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import multer from 'multer';
+import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { UserRole, DoctorStatus, SubscriptionStatus } from '@prisma/client';
 import { authenticateToken, JWT_SECRET } from '../middleware/auth.middleware';
+import { getUploadDirectory, getFileUrl } from '../lib/storage';
 
 const router = Router();
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
+const avatarUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, getUploadDirectory()),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname) || '.jpg';
+      cb(null, `avatar_${uuidv4()}${ext}`);
+    },
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|webp/;
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowedTypes.test(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files (jpg, png, webp) are allowed for profile pictures.'));
+    }
+  },
+});
 
 // Brute-force protection: track failed login attempts per IP
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
@@ -418,5 +442,47 @@ router.put('/profile', authenticateToken, async (req: Request, res: Response) =>
     res.status(500).json({ success: false, message: 'Failed to update profile.' });
   }
 });
+
+/**
+ * Upload Profile Picture (Patient or Doctor)
+ */
+router.post(
+  '/avatar',
+  authenticateToken,
+  avatarUpload.single('avatar'),
+  async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        res.status(400).json({ success: false, message: 'No profile image was uploaded.' });
+        return;
+      }
+
+      const avatarUrl = getFileUrl(req.file.filename, req.get('host'));
+
+      const updated = await prisma.user.update({
+        where: { id: req.user!.id },
+        data: { avatarUrl },
+        select: {
+          id: true,
+          role: true,
+          fullName: true,
+          phoneNumber: true,
+          email: true,
+          avatarUrl: true,
+        },
+      });
+
+      res.json({
+        success: true,
+        message: 'Profile picture updated successfully.',
+        avatarUrl,
+        user: updated,
+      });
+    } catch (error: any) {
+      console.error('[Avatar Upload Error]', error);
+      res.status(500).json({ success: false, message: error.message || 'Failed to upload avatar.' });
+    }
+  }
+);
 
 export default router;

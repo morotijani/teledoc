@@ -7,10 +7,16 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
+  Linking,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { apiClient } from '../../api/client';
+import { useAlert } from '../../context/AlertContext';
+import Avatar from '../../components/Avatar';
+import { COLORS, FONTS, RADIUS, SHADOWS } from '../../theme/theme';
 
 export default function MyAppointmentsScreen({ navigation }: any) {
+  const { showAlert } = useAlert();
   const [appointments, setAppointments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -35,44 +41,52 @@ export default function MyAppointmentsScreen({ navigation }: any) {
     }
   };
 
-  const getStatusBadgeStyle = (status: string) => {
+  const getStatusStyle = (status: string) => {
     switch (status) {
       case 'CONFIRMED':
-        return styles.statusConfirmed;
+        return { bg: COLORS.successSoft, text: COLORS.success };
       case 'IN_PROGRESS':
-        return styles.statusInProgress;
+        return { bg: COLORS.infoSoft, text: COLORS.info };
       case 'COMPLETED':
-        return styles.statusCompleted;
+        return { bg: COLORS.surfaceMuted, text: COLORS.textSecondary };
       case 'CANCELLED':
-        return styles.statusCancelled;
+        return { bg: COLORS.dangerSoft, text: COLORS.danger };
       default:
-        return styles.statusConfirmed;
+        return { bg: COLORS.successSoft, text: COLORS.success };
     }
   };
 
   const renderItem = ({ item }: { item: any }) => {
     const isLive = item.status === 'CONFIRMED' || item.status === 'IN_PROGRESS';
     const isCompleted = item.status === 'COMPLETED';
+    const badge = getStatusStyle(item.status);
 
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <View>
-            <Text style={styles.doctorName}>{item.doctor.fullName}</Text>
-            <Text style={styles.specialty}>
-              {item.doctor.doctorProfile?.specialty || 'General Practitioner'}
-            </Text>
+          <View style={styles.docInfoRow}>
+            <Avatar uri={item.doctor.avatarUrl} name={item.doctor.fullName} size={46} borderRadius={14} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.doctorName}>{item.doctor.fullName}</Text>
+              <Text style={styles.specialty}>
+                {item.doctor.doctorProfile?.specialty || 'General Practice'}
+              </Text>
+            </View>
           </View>
 
-          <View style={[styles.statusBadge, getStatusBadgeStyle(item.status)]}>
-            <Text style={styles.statusText}>{item.status}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: badge.bg }]}>
+            <Text style={[styles.statusText, { color: badge.text }]}>{item.status}</Text>
           </View>
         </View>
 
         <View style={styles.dateTimeRow}>
+          <MaterialIcons name="event" size={16} color={COLORS.primary} />
           <Text style={styles.dateTimeText}>
-            📅 {new Date(item.scheduledStart).toLocaleDateString()} at{' '}
-            {new Date(item.scheduledStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {new Date(item.scheduledStart).toLocaleDateString()} ·{' '}
+            {new Date(item.scheduledStart).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
           </Text>
         </View>
 
@@ -84,40 +98,90 @@ export default function MyAppointmentsScreen({ navigation }: any) {
 
         {isCompleted && item.consultation ? (
           <View style={styles.summaryBox}>
-            <Text style={styles.summaryTitle}>
-              🩺 Diagnosis: {item.consultation.diagnosis || 'General Consultation'}
-            </Text>
+            <View style={styles.summaryHeader}>
+              <MaterialIcons name="assignment-turned-in" size={15} color={COLORS.primaryDark} />
+              <Text style={styles.summaryTitle}>
+                Diagnosis: {item.consultation.diagnosis || 'General Consultation'}
+              </Text>
+            </View>
             {item.consultation.patientSummary ? (
               <Text style={styles.summaryBody}>{item.consultation.patientSummary}</Text>
             ) : null}
           </View>
         ) : null}
 
-        {/* Action Buttons */}
         <View style={styles.actionsRow}>
           {isLive && (
-            <TouchableOpacity
-              style={styles.joinCallBtn}
-              onPress={() =>
-                navigation.navigate('ConsultationRoom', {
-                  appointmentId: item.id,
-                  doctorName: item.doctor.fullName,
-                  channelId: item.meetingChannelId,
-                })
-              }
-            >
-              <Text style={styles.joinCallBtnText}>📹 Enter Consultation Room</Text>
-            </TouchableOpacity>
+            <View style={styles.liveActionRow}>
+              <TouchableOpacity
+                style={[styles.joinCallBtn, { flex: 1 }]}
+                activeOpacity={0.85}
+                onPress={() =>
+                  showAlert({
+                    type: 'info',
+                    title: `Call ${item.doctor.fullName}`,
+                    message: 'Select In-App Video Call or place a standard phone call.',
+                    actions: [
+                      {
+                        text: 'In-App Video Call',
+                        style: 'primary',
+                        onPress: () =>
+                          navigation.navigate('ConsultationRoom', {
+                            appointmentId: item.id,
+                            doctorName: item.doctor.fullName,
+                            channelId: item.meetingChannelId,
+                          }),
+                      },
+                      ...(item.doctor.phoneNumber
+                        ? [
+                            {
+                              text: `Phone Dial (${item.doctor.phoneNumber})`,
+                              style: 'primary' as const,
+                              onPress: () => Linking.openURL(`tel:${item.doctor.phoneNumber}`),
+                            },
+                          ]
+                        : []),
+                      { text: 'Cancel', style: 'cancel' },
+                    ],
+                  })
+                }
+              >
+                <MaterialIcons name="call" size={18} color={COLORS.white} />
+                <Text style={styles.joinCallBtnText}>Call Doctor</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.chatQuickBtn}
+                activeOpacity={0.85}
+                onPress={() =>
+                  navigation.navigate('DirectChat', {
+                    appointmentId: item.id,
+                    participantName: item.doctor.fullName,
+                    participantPhone: item.doctor.phoneNumber,
+                    participantAvatar: item.doctor.avatarUrl,
+                    channelId: item.meetingChannelId,
+                    isDoctor: false,
+                  })
+                }
+              >
+                <MaterialIcons name="chat-bubble-outline" size={18} color={COLORS.primary} />
+                <Text style={styles.chatQuickBtnText}>Chat</Text>
+              </TouchableOpacity>
+            </View>
           )}
 
-          {isCompleted && item.consultation?.prescriptions && item.consultation.prescriptions.length > 0 && (
-            <TouchableOpacity
-              style={styles.viewRxBtn}
-              onPress={() => navigation.navigate('Prescriptions')}
-            >
-              <Text style={styles.viewRxBtnText}>💊 View Prescription</Text>
-            </TouchableOpacity>
-          )}
+          {isCompleted &&
+            item.consultation?.prescriptions &&
+            item.consultation.prescriptions.length > 0 && (
+              <TouchableOpacity
+                style={styles.viewRxBtn}
+                activeOpacity={0.85}
+                onPress={() => navigation.navigate('Prescriptions')}
+              >
+                <MaterialIcons name="medication" size={16} color={COLORS.white} />
+                <Text style={styles.viewRxBtnText}>View Prescription</Text>
+              </TouchableOpacity>
+            )}
         </View>
       </View>
     );
@@ -127,7 +191,7 @@ export default function MyAppointmentsScreen({ navigation }: any) {
     <View style={styles.container}>
       {isLoading && !refreshing ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#059669" />
+          <ActivityIndicator size="large" color={COLORS.primary} />
           <Text style={styles.loadingText}>Loading your appointments...</Text>
         </View>
       ) : (
@@ -136,6 +200,7 @@ export default function MyAppointmentsScreen({ navigation }: any) {
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -143,13 +208,19 @@ export default function MyAppointmentsScreen({ navigation }: any) {
                 setRefreshing(true);
                 fetchMyAppointments();
               }}
-              colors={['#059669']}
+              tintColor={COLORS.primary}
+              colors={[COLORS.primary]}
             />
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
+              <View style={styles.emptyIconCircle}>
+                <MaterialIcons name="calendar-today" size={30} color={COLORS.textSubtle} />
+              </View>
               <Text style={styles.emptyTitle}>No Appointments Scheduled</Text>
-              <Text style={styles.emptyText}>You do not have any upcoming doctor teleconsultations.</Text>
+              <Text style={styles.emptyText}>
+                You do not have any upcoming doctor teleconsultations yet.
+              </Text>
               <TouchableOpacity
                 style={styles.findDoctorBtn}
                 onPress={() => navigation.getParent()?.navigate('Find Doctors')}
@@ -167,126 +238,167 @@ export default function MyAppointmentsScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.bg,
   },
   listContent: {
-    padding: 16,
-    gap: 12,
+    padding: 18,
+    gap: 14,
   },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
-    padding: 16,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
+    padding: 18,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 5,
-    elevation: 2,
+    borderColor: COLORS.border,
+    ...SHADOWS.card,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    gap: 10,
+  },
+  docInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: COLORS.primarySoft,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    fontSize: 18,
+    fontFamily: FONTS.bold,
+    color: COLORS.primary,
   },
   doctorName: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0f172a',
+    fontSize: 15,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   specialty: {
     fontSize: 12,
-    color: '#0284c7',
-    fontWeight: '700',
+    fontFamily: FONTS.medium,
+    color: COLORS.info,
     marginTop: 1,
   },
   statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  statusConfirmed: {
-    backgroundColor: '#ecfdf5',
-  },
-  statusInProgress: {
-    backgroundColor: '#e0f2fe',
-  },
-  statusCompleted: {
-    backgroundColor: '#f1f5f9',
-  },
-  statusCancelled: {
-    backgroundColor: '#fef2f2',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: RADIUS.pill,
   },
   statusText: {
     fontSize: 10,
-    fontWeight: '800',
-    color: '#334155',
+    fontFamily: FONTS.bold,
+    letterSpacing: 0.4,
   },
   dateTimeRow: {
-    marginTop: 10,
-    backgroundColor: '#f8fafc',
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    backgroundColor: COLORS.bg,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: RADIUS.sm,
   },
   dateTimeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1e293b',
+    fontSize: 13,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textSecondary,
   },
   symptomsText: {
     fontSize: 12,
-    color: '#64748b',
-    marginTop: 8,
-    fontStyle: 'italic',
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
+    marginTop: 10,
+    lineHeight: 17,
   },
   summaryBox: {
-    marginTop: 10,
-    backgroundColor: '#ecfdf5',
+    marginTop: 12,
+    backgroundColor: COLORS.primarySoft,
     borderWidth: 1,
-    borderColor: '#a7f3d0',
-    borderRadius: 10,
-    padding: 10,
+    borderColor: COLORS.primaryLight,
+    borderRadius: RADIUS.md,
+    padding: 12,
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   summaryTitle: {
     fontSize: 12,
-    fontWeight: '800',
-    color: '#047857',
+    fontFamily: FONTS.bold,
+    color: COLORS.primaryDark,
   },
   summaryBody: {
-    fontSize: 11,
-    color: '#065f46',
-    marginTop: 3,
-    lineHeight: 16,
+    fontSize: 12,
+    fontFamily: FONTS.regular,
+    color: COLORS.textSecondary,
+    marginTop: 4,
+    lineHeight: 17,
   },
   actionsRow: {
     marginTop: 14,
-    paddingTop: 10,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
+    borderTopColor: COLORS.surfaceMuted,
+  },
+  liveActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  chatQuickBtn: {
+    flexDirection: 'row',
+    gap: 6,
+    backgroundColor: COLORS.primarySoft,
+    borderWidth: 1,
+    borderColor: COLORS.primaryLight,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 16,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  chatQuickBtnText: {
+    color: COLORS.primaryDark,
+    fontSize: 13,
+    fontFamily: FONTS.bold,
   },
   joinCallBtn: {
-    backgroundColor: '#059669',
-    borderRadius: 12,
-    paddingVertical: 12,
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    height: 44,
+    justifyContent: 'center',
     alignItems: 'center',
   },
   joinCallBtnText: {
-    color: '#ffffff',
+    color: COLORS.white,
     fontSize: 13,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
   },
   viewRxBtn: {
-    backgroundColor: '#0284c7',
-    borderRadius: 12,
-    paddingVertical: 10,
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: COLORS.info,
+    borderRadius: RADIUS.md,
+    height: 42,
+    justifyContent: 'center',
     alignItems: 'center',
   },
   viewRxBtnText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '800',
+    color: COLORS.white,
+    fontSize: 13,
+    fontFamily: FONTS.bold,
   },
   loadingContainer: {
     flex: 1,
@@ -295,34 +407,46 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 10,
-    color: '#64748b',
+    color: COLORS.textMuted,
     fontSize: 13,
+    fontFamily: FONTS.medium,
   },
   emptyContainer: {
     alignItems: 'center',
     padding: 40,
   },
+  emptyIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: COLORS.surfaceMuted,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
   emptyTitle: {
     fontSize: 16,
-    fontWeight: '800',
-    color: '#334155',
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   emptyText: {
-    fontSize: 12,
-    color: '#94a3b8',
+    fontSize: 13,
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
     marginTop: 4,
     textAlign: 'center',
-    marginBottom: 16,
+    marginBottom: 18,
+    lineHeight: 18,
   },
   findDoctorBtn: {
-    backgroundColor: '#059669',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: RADIUS.md,
   },
   findDoctorBtnText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '800',
+    color: COLORS.white,
+    fontSize: 13,
+    fontFamily: FONTS.bold,
   },
 });

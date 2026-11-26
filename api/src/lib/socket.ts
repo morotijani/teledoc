@@ -93,10 +93,11 @@ export function setupSocketServer(httpServer: HttpServer): SocketIOServer {
         attachmentUrl,
       }: {
         appointmentId: string;
-        message: string;
+        message?: string;
         attachmentUrl?: string;
       }) => {
-        if (!socket.user || !appointmentId || !message?.trim()) return;
+        const trimmedMsg = (message || '').trim();
+        if (!socket.user || !appointmentId || (!trimmedMsg && !attachmentUrl)) return;
 
         try {
           const appointment = await prisma.appointment.findUnique({
@@ -118,8 +119,8 @@ export function setupSocketServer(httpServer: HttpServer): SocketIOServer {
             data: {
               appointmentId,
               senderId: socket.user.id,
-              message: message.trim(),
-              attachmentUrl,
+              message: trimmedMsg || 'Shared an attachment',
+              attachmentUrl: attachmentUrl || null,
             },
             include: {
               sender: {
@@ -136,6 +137,47 @@ export function setupSocketServer(httpServer: HttpServer): SocketIOServer {
         }
       }
     );
+
+    // Mark incoming messages as seen/read in real time
+    socket.on('mark_messages_read', async ({ appointmentId }: { appointmentId: string }) => {
+      if (!socket.user || !appointmentId) return;
+
+      try {
+        const appointment = await prisma.appointment.findUnique({
+          where: { id: appointmentId },
+          select: { patientId: true, doctorId: true },
+        });
+
+        if (
+          !appointment ||
+          (appointment.patientId !== socket.user.id &&
+            appointment.doctorId !== socket.user.id &&
+            socket.user.role !== UserRole.ADMIN)
+        ) {
+          return;
+        }
+
+        const readAt = new Date();
+        const updated = await prisma.chatMessage.updateMany({
+          where: {
+            appointmentId,
+            senderId: { not: socket.user.id },
+            readAt: null,
+          },
+          data: { readAt },
+        });
+
+        if (updated.count > 0) {
+          io.to(`appointment:${appointmentId}`).emit('messages_read', {
+            appointmentId,
+            readerId: socket.user.id,
+            readAt: readAt.toISOString(),
+          });
+        }
+      } catch (error) {
+        console.error('[Socket.io] Failed to mark messages read:', error);
+      }
+    });
 
     // Typing indicators
     socket.on('typing_start', ({ appointmentId }: { appointmentId: string }) => {

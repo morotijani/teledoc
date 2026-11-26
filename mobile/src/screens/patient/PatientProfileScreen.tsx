@@ -7,23 +7,66 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   Modal,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import { useAuth } from '../../context/AuthContext';
+import { useAlert } from '../../context/AlertContext';
 import { apiClient } from '../../api/client';
+import Avatar from '../../components/Avatar';
+import { COLORS, FONTS, RADIUS, SHADOWS } from '../../theme/theme';
 
 export default function PatientProfileScreen({ navigation }: any) {
   const { user, subscription, logout, refreshProfile } = useAuth();
+  const { showAlert } = useAlert();
   const [stats, setStats] = useState({ appointments: 0, prescriptions: 0, records: 0 });
   const [isLoadingStats, setIsLoadingStats] = useState(true);
 
-  // Edit profile modal state
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [fullName, setFullName] = useState(user?.fullName || '');
   const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber || '');
   const [email, setEmail] = useState(user?.email || '');
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+
+  const handleUploadAvatar = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['image/*'],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+      const asset = result.assets[0];
+      setIsUploadingAvatar(true);
+
+      const formData = new FormData();
+      formData.append('avatar', {
+        uri: asset.uri,
+        name: asset.name || 'profile.jpg',
+        type: asset.mimeType || 'image/jpeg',
+      } as any);
+
+      await apiClient.post('/auth/avatar', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      await refreshProfile();
+      showAlert({
+        type: 'success',
+        title: 'Photo Updated',
+        message: 'Your profile picture has been updated.',
+      });
+    } catch (err: any) {
+      showAlert({
+        type: 'error',
+        title: 'Upload Failed',
+        message: err.response?.data?.message || 'Could not upload profile picture.',
+      });
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
 
   useEffect(() => {
     fetchPatientSummary();
@@ -60,7 +103,11 @@ export default function PatientProfileScreen({ navigation }: any) {
 
   const handleSaveProfile = async () => {
     if (!fullName.trim() || !phoneNumber.trim()) {
-      Alert.alert('Required', 'Full name and phone number are required.');
+      showAlert({
+        type: 'warning',
+        title: 'Required Information',
+        message: 'Full name and phone number are required.',
+      });
       return;
     }
 
@@ -73,37 +120,66 @@ export default function PatientProfileScreen({ navigation }: any) {
       });
       await refreshProfile();
       setEditModalVisible(false);
-      Alert.alert('Profile Updated', 'Your personal details have been saved.');
+      showAlert({
+        type: 'success',
+        title: 'Profile Updated',
+        message: 'Your personal details have been saved.',
+      });
     } catch (err: any) {
-      Alert.alert('Update Failed', err.response?.data?.message || 'Could not update profile.');
+      showAlert({
+        type: 'error',
+        title: 'Update Failed',
+        message: err.response?.data?.message || 'Could not update profile.',
+      });
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleConfirmLogout = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out of your TeleDoc Ghana account?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: logout },
-    ]);
+    showAlert({
+      type: 'confirm',
+      title: 'Sign Out',
+      message: 'Are you sure you want to sign out of your TeleDoc Ghana account?',
+      actions: [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign Out', style: 'destructive', onPress: logout },
+      ],
+    });
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+    >
       {/* Identity Card */}
       <View style={styles.profileCard}>
-        <View style={styles.avatarCircle}>
-          <Text style={styles.avatarInitials}>
-            {user?.fullName ? user.fullName.charAt(0).toUpperCase() : 'P'}
-          </Text>
-        </View>
+        <TouchableOpacity
+          style={styles.avatarTouchWrap}
+          onPress={handleUploadAvatar}
+          disabled={isUploadingAvatar}
+          activeOpacity={0.85}
+        >
+          <Avatar uri={user?.avatarUrl} name={user?.fullName} size={80} borderRadius={26} />
+          <View style={styles.cameraBadge}>
+            {isUploadingAvatar ? (
+              <ActivityIndicator size="small" color={COLORS.white} />
+            ) : (
+              <MaterialIcons name="photo-camera" size={14} color={COLORS.white} />
+            )}
+          </View>
+        </TouchableOpacity>
+        <Text style={styles.tapPhotoHint}>Tap photo to update</Text>
 
         <Text style={styles.userName}>{user?.fullName}</Text>
         <Text style={styles.userPhone}>{user?.phoneNumber}</Text>
         {user?.email ? <Text style={styles.userEmail}>{user.email}</Text> : null}
 
         <View style={styles.roleBadge}>
-          <Text style={styles.roleBadgeText}>✓ Verified Patient Account</Text>
+          <MaterialIcons name="verified" size={14} color={COLORS.primary} />
+          <Text style={styles.roleBadgeText}>Verified Patient Account</Text>
         </View>
 
         <TouchableOpacity
@@ -115,7 +191,8 @@ export default function PatientProfileScreen({ navigation }: any) {
             setEditModalVisible(true);
           }}
         >
-          <Text style={styles.editProfileBtnText}>✏️ Edit Personal Info</Text>
+          <MaterialIcons name="edit" size={15} color={COLORS.textSecondary} />
+          <Text style={styles.editProfileBtnText}>Edit Personal Info</Text>
         </TouchableOpacity>
       </View>
 
@@ -125,35 +202,38 @@ export default function PatientProfileScreen({ navigation }: any) {
           style={styles.statCard}
           onPress={() => navigation.navigate('Schedule')}
         >
+          <MaterialIcons name="calendar-today" size={18} color={COLORS.primary} />
           <Text style={styles.statNumber}>{isLoadingStats ? '...' : stats.appointments}</Text>
-          <Text style={styles.statLabel}>Consultations</Text>
+          <Text style={styles.statLabel}>Visits</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.statCard}
           onPress={() => navigation.navigate('Prescriptions')}
         >
+          <MaterialIcons name="medication" size={18} color={COLORS.info} />
           <Text style={styles.statNumber}>{isLoadingStats ? '...' : stats.prescriptions}</Text>
-          <Text style={styles.statLabel}>e-Prescriptions</Text>
+          <Text style={styles.statLabel}>Rx</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.statCard}
           onPress={() => navigation.navigate('Lab Tests')}
         >
+          <MaterialIcons name="science" size={18} color={COLORS.success} />
           <Text style={styles.statNumber}>{isLoadingStats ? '...' : stats.records}</Text>
-          <Text style={styles.statLabel}>Lab Reports</Text>
+          <Text style={styles.statLabel}>Labs</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Subscription & Billing Card */}
+      {/* Subscription Card */}
       <View style={styles.planCard}>
         <View style={styles.planHeaderRow}>
           <View>
             <Text style={styles.planOverline}>SUBSCRIPTION TIER</Text>
             <Text style={styles.planTitle}>
               {subscription?.status === 'ACTIVE'
-                ? 'Monthly Unlimited (10 GHS/mo)'
+                ? 'Monthly Unlimited (GHS 10/mo)'
                 : '90-Day Free Trial'}
             </Text>
           </View>
@@ -172,20 +252,28 @@ export default function PatientProfileScreen({ navigation }: any) {
           style={styles.managePlanBtn}
           onPress={() => navigation.navigate('Plan & MoMo')}
         >
-          <Text style={styles.managePlanBtnText}>💳 Manage Plan & Mobile Money Billing →</Text>
+          <MaterialIcons name="account-balance-wallet" size={16} color="#38BDF8" />
+          <Text style={styles.managePlanBtnText}>Manage Plan & Mobile Money</Text>
+          <MaterialIcons name="arrow-forward" size={16} color="#38BDF8" />
         </TouchableOpacity>
       </View>
 
       {/* Sign Out Button */}
       <TouchableOpacity style={styles.logoutButton} onPress={handleConfirmLogout}>
-        <Text style={styles.logoutButtonText}>🚪 Sign Out of Account</Text>
+        <MaterialIcons name="logout" size={18} color={COLORS.danger} />
+        <Text style={styles.logoutButtonText}>Sign Out</Text>
       </TouchableOpacity>
 
       {/* Edit Profile Modal */}
       <Modal visible={editModalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Edit Patient Profile</Text>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Personal Info</Text>
+              <TouchableOpacity onPress={() => setEditModalVisible(false)}>
+                <MaterialIcons name="close" size={22} color={COLORS.textMuted} />
+              </TouchableOpacity>
+            </View>
 
             <Text style={styles.inputLabel}>Full Name</Text>
             <TextInput
@@ -201,7 +289,7 @@ export default function PatientProfileScreen({ navigation }: any) {
               value={phoneNumber}
               onChangeText={setPhoneNumber}
               keyboardType="phone-pad"
-              placeholder="0244000001"
+              placeholder="+233 24 000 0001"
             />
 
             <Text style={styles.inputLabel}>Email Address (Optional)</Text>
@@ -229,7 +317,7 @@ export default function PatientProfileScreen({ navigation }: any) {
                 disabled={isSaving}
               >
                 {isSaving ? (
-                  <ActivityIndicator color="#ffffff" />
+                  <ActivityIndicator color={COLORS.white} />
                 ) : (
                   <Text style={styles.saveBtnText}>Save Changes</Text>
                 )}
@@ -245,75 +333,91 @@ export default function PatientProfileScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.bg,
   },
   content: {
     padding: 18,
     gap: 16,
+    paddingBottom: 32,
   },
   profileCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
     padding: 22,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: COLORS.border,
+    ...SHADOWS.card,
   },
-  avatarCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#ecfdf5',
+  avatarTouchWrap: {
+    position: 'relative',
+    marginBottom: 6,
+  },
+  cameraBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: COLORS.primary,
     borderWidth: 2,
-    borderColor: '#10b981',
+    borderColor: COLORS.surface,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
   },
-  avatarInitials: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: '#059669',
+  tapPhotoHint: {
+    fontSize: 11,
+    fontFamily: FONTS.medium,
+    color: COLORS.textSubtle,
+    marginBottom: 8,
   },
   userName: {
     fontSize: 19,
-    fontWeight: '900',
-    color: '#0f172a',
+    fontFamily: FONTS.extraBold,
+    color: COLORS.text,
   },
   userPhone: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#475569',
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textSecondary,
     marginTop: 2,
   },
   userEmail: {
     fontSize: 12,
-    color: '#64748b',
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
     marginTop: 2,
   },
   roleBadge: {
-    backgroundColor: '#ecfdf5',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: COLORS.primarySoft,
     paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingVertical: 5,
+    borderRadius: RADIUS.pill,
     marginTop: 10,
   },
   roleBadgeText: {
     fontSize: 11,
-    fontWeight: '800',
-    color: '#059669',
+    fontFamily: FONTS.bold,
+    color: COLORS.primaryDark,
   },
   editProfileBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     marginTop: 14,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: COLORS.surfaceMuted,
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingVertical: 9,
+    borderRadius: RADIUS.md,
   },
   editProfileBtnText: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#334155',
+    fontFamily: FONTS.bold,
+    color: COLORS.textSecondary,
   },
   statsRow: {
     flexDirection: 'row',
@@ -321,30 +425,32 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
     paddingVertical: 14,
     paddingHorizontal: 8,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: COLORS.border,
+    gap: 4,
+    ...SHADOWS.card,
   },
   statNumber: {
     fontSize: 20,
-    fontWeight: '900',
-    color: '#059669',
+    fontFamily: FONTS.extraBold,
+    color: COLORS.text,
   },
   statLabel: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#64748b',
-    marginTop: 2,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textMuted,
   },
   planCard: {
-    backgroundColor: '#0f172a',
-    borderRadius: 20,
-    padding: 18,
+    backgroundColor: COLORS.navy,
+    borderRadius: RADIUS.xl,
+    padding: 20,
     gap: 10,
+    ...SHADOWS.elevated,
   },
   planHeaderRow: {
     flexDirection: 'row',
@@ -353,57 +459,63 @@ const styles = StyleSheet.create({
   },
   planOverline: {
     fontSize: 10,
-    fontWeight: '800',
-    color: '#34d399',
+    fontFamily: FONTS.bold,
+    color: '#2DD4BF',
     letterSpacing: 0.8,
   },
   planTitle: {
     fontSize: 16,
-    fontWeight: '900',
-    color: '#ffffff',
-    marginTop: 2,
+    fontFamily: FONTS.bold,
+    color: COLORS.white,
+    marginTop: 3,
   },
   planStatusPill: {
-    backgroundColor: '#059669',
+    backgroundColor: COLORS.primary,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
   },
   planStatusText: {
     fontSize: 10,
-    fontWeight: '800',
-    color: '#ffffff',
+    fontFamily: FONTS.bold,
+    color: COLORS.white,
   },
   planDesc: {
     fontSize: 12,
-    color: '#94a3b8',
+    fontFamily: FONTS.regular,
+    color: '#94A3B8',
     lineHeight: 18,
   },
   managePlanBtn: {
-    backgroundColor: '#1e293b',
-    paddingVertical: 11,
-    borderRadius: 12,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.navyLight,
+    paddingVertical: 12,
+    borderRadius: RADIUS.md,
     marginTop: 4,
   },
   managePlanBtnText: {
-    color: '#38bdf8',
+    color: '#38BDF8',
     fontSize: 12,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
   },
   logoutButton: {
-    backgroundColor: '#fef2f2',
-    borderWidth: 1,
-    borderColor: '#fecaca',
-    borderRadius: 14,
-    paddingVertical: 14,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.dangerSoft,
+    borderWidth: 1,
+    borderColor: COLORS.dangerBorder,
+    borderRadius: RADIUS.md,
+    height: 48,
   },
   logoutButtonText: {
-    color: '#dc2626',
+    color: COLORS.danger,
     fontSize: 14,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
   },
   modalOverlay: {
     flex: 1,
@@ -411,62 +523,69 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 24,
+    padding: 22,
     gap: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: '900',
-    color: '#0f172a',
-    marginBottom: 4,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   inputLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#475569',
-    textTransform: 'uppercase',
+    fontSize: 12,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textSecondary,
     marginTop: 4,
   },
   input: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.bg,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 12,
+    borderColor: COLORS.borderStrong,
+    borderRadius: RADIUS.md,
     paddingHorizontal: 14,
     paddingVertical: 11,
     fontSize: 14,
-    color: '#0f172a',
+    fontFamily: FONTS.medium,
+    color: COLORS.text,
   },
   modalActions: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 14,
+    marginTop: 12,
   },
   cancelBtn: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#f1f5f9',
+    height: 46,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surfaceMuted,
+    justifyContent: 'center',
     alignItems: 'center',
   },
   cancelBtnText: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#475569',
+    fontFamily: FONTS.bold,
+    color: COLORS.textSecondary,
   },
   saveBtn: {
     flex: 2,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#059669',
+    height: 46,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
     alignItems: 'center',
   },
   saveBtnText: {
     fontSize: 13,
-    fontWeight: '800',
-    color: '#ffffff',
+    fontFamily: FONTS.bold,
+    color: COLORS.white,
   },
 });

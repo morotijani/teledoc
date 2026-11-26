@@ -68,24 +68,42 @@ router.post(
         return;
       }
 
-      // 2. Check for slot conflict with doctor
-      const existingConflict = await prisma.appointment.findFirst({
-        where: {
-          doctorId: data.doctorId,
-          status: { in: [AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS] },
-          OR: [
-            {
-              scheduledStart: { lt: scheduledEnd },
-              scheduledEnd: { gt: scheduledStart },
+      // 2. Check for slot conflict with doctor OR patient
+      const [doctorConflict, patientConflict] = await Promise.all([
+        prisma.appointment.findFirst({
+          where: {
+            doctorId: data.doctorId,
+            status: {
+              in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS],
             },
-          ],
-        },
-      });
+            scheduledStart: { lt: scheduledEnd },
+            scheduledEnd: { gt: scheduledStart },
+          },
+        }),
+        prisma.appointment.findFirst({
+          where: {
+            patientId,
+            status: {
+              in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS],
+            },
+            scheduledStart: { lt: scheduledEnd },
+            scheduledEnd: { gt: scheduledStart },
+          },
+        }),
+      ]);
 
-      if (existingConflict) {
+      if (doctorConflict) {
         res.status(409).json({
           success: false,
-          message: 'This time slot has already been booked. Please choose another slot.',
+          message: 'This time slot has already been booked by another patient. Please select the next available slot.',
+        });
+        return;
+      }
+
+      if (patientConflict) {
+        res.status(409).json({
+          success: false,
+          message: 'You already have another consultation scheduled at this exact time.',
         });
         return;
       }

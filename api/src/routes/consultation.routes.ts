@@ -1,4 +1,7 @@
 import { Router, Request, Response } from 'express';
+import multer from 'multer';
+import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { UserRole, AppointmentStatus } from '@prisma/client';
@@ -6,8 +9,29 @@ import { authenticateToken } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/rbac.middleware';
 import { generateAgoraRtcToken } from '../lib/agora';
 import { sendPushNotification } from '../lib/notifications';
+import { getUploadDirectory, getFileUrl } from '../lib/storage';
 
 const router = Router();
+
+const chatUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, getUploadDirectory()),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname) || '.bin';
+      cb(null, `chat_${uuidv4()}${ext}`);
+    },
+  }),
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|webp|pdf|doc|docx/;
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowedTypes.test(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only images (jpg, png, webp) and documents (pdf, doc, docx) are allowed.'));
+    }
+  },
+});
 
 /**
  * Generate Agora RTC Video/Audio Session Token
@@ -265,6 +289,103 @@ router.get('/:appointmentId/messages', authenticateToken, async (req: Request, r
     res.status(500).json({ success: false, message: 'Failed to retrieve chat messages.' });
   }
 });
+
+/**
+ * Mark Unread Chat Messages as Seen
+ */
+router.post('/:appointmentId/messages/read', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const appointmentId = String(req.params.appointmentId);
+    const userId = req.user!.id;
+
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      select: { patientId: true, doctorId: true },
+    });
+
+    if (!appointment) {
+      res.status(404).json({ success: false, message: 'Appointment not found.' });
+      return;
+    }
+
+    if (
+      appointment.patientId !== userId &&
+      appointment.doctorId !== userId &&
+      req.user!.role !== UserRole.ADMIN
+    ) {
+      res.status(403).json({ success: false, message: 'Unauthorized.' });
+      return;
+    }
+
+    const readAt = new Date();
+    const updated = await prisma.chatMessage.updateMany({
+      where: {
+        appointmentId,
+        senderId: { not: userId },
+        readAt: null,
+      },
+      data: { readAt },
+    });
+
+    res.json({
+      success: true,
+      markedCount: updated.count,
+      readAt: readAt.toISOString(),
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to mark messages as read.' });
+  }
+});
+
+/**
+ * Upload Chat File Attachment (Image, PDF, Doc)
+ */
+router.post(
+  '/:appointmentId/attachments',
+  authenticateToken,
+  chatUpload.single('file'),
+  async (req: Request, res: Response) => {
+    try {
+      const appointmentId = String(req.params.appointmentId);
+      const userId = req.user!.id;
+
+      const appointment = await prisma.appointment.findUnique({
+        where: { id: appointmentId },
+        select: { patientId: true, doctorId: true },
+      });
+
+      if (!appointment) {
+        res.status(404).json({ success: false, message: 'Appointment not found.' });
+        return;
+      }
+
+      if (
+        appointment.patientId !== userId &&
+        appointment.doctorId !== userId &&
+        req.user!.role !== UserRole.ADMIN
+      ) {
+        res.status(403).json({ success: false, message: 'Unauthorized to upload to this chat.' });
+        return;
+      }
+
+      if (!req.file) {
+        res.status(400).json({ success: false, message: 'No attachment file provided.' });
+        return;
+      }
+
+      const attachmentUrl = getFileUrl(req.file.filename, req.get('host'));
+
+      res.status(201).json({
+        success: true,
+        attachmentUrl,
+        fileName: req.file.originalname,
+      });
+    } catch (error: any) {
+      console.error('[Chat Attachment Upload Error]', error);
+      res.status(500).json({ success: false, message: error.message || 'Failed to upload attachment.' });
+    }
+  }
+);
 
 /**
  * Get Consultation & Prescription Details

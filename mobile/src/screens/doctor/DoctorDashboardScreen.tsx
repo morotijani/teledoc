@@ -9,18 +9,24 @@ import {
   RefreshControl,
   Modal,
   Linking,
-  Alert,
+  SafeAreaView,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { apiClient, API_URL } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
+import { useAlert } from '../../context/AlertContext';
+import { useDocumentViewer } from '../../context/DocumentViewerContext';
+import Avatar from '../../components/Avatar';
+import { COLORS, FONTS, RADIUS, SHADOWS } from '../../theme/theme';
 
 export default function DoctorDashboardScreen({ navigation }: any) {
   const { user, doctorVerification, logout } = useAuth();
+  const { showAlert } = useAlert();
+  const { openDocument } = useDocumentViewer();
   const [appointments, setAppointments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Patient Lab Records Modal State
   const [recordsModalVisible, setRecordsModalVisible] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
   const [patientRecords, setPatientRecords] = useState<any[]>([]);
@@ -54,84 +60,105 @@ export default function DoctorDashboardScreen({ navigation }: any) {
       const res = await apiClient.get(`/records/patient/${patient.id}`);
       setPatientRecords(res.data.records || []);
     } catch (err: any) {
-      Alert.alert(
-        'Records Error',
-        err.response?.data?.message || 'Could not load patient medical records.'
-      );
+      showAlert({
+        type: 'error',
+        title: 'Records Error',
+        message: err.response?.data?.message || 'Could not load patient medical records.',
+      });
       setPatientRecords([]);
     } finally {
       setIsLoadingRecords(false);
     }
   };
 
-  const handleOpenDocument = async (rawUrl: string) => {
+  const handleOpenDocument = (rawUrl: string, title?: string) => {
     if (!rawUrl) return;
-    const baseServer = API_URL.replace('/api/v1', '');
-    const resolvedUrl = rawUrl.replace(/http:\/\/localhost:\d+/, baseServer);
-    try {
-      await Linking.openURL(resolvedUrl);
-    } catch {
-      Alert.alert('Cannot Open File', `Document URL: ${resolvedUrl}`);
-    }
+    setRecordsModalVisible(false);
+    openDocument(rawUrl, title);
+  };
+
+  const getStatusStyle = (status: string) => {
+    if (status === 'CONFIRMED') return { bg: COLORS.successSoft, text: COLORS.success };
+    if (status === 'IN_PROGRESS') return { bg: COLORS.infoSoft, text: COLORS.info };
+    return { bg: COLORS.surfaceMuted, text: COLORS.textSecondary };
   };
 
   const renderAppointment = ({ item }: { item: any }) => {
     const isLive = item.status === 'CONFIRMED' || item.status === 'IN_PROGRESS';
     const isCompleted = item.status === 'COMPLETED';
+    const badge = getStatusStyle(item.status);
 
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <View>
-            <Text style={styles.patientName}>{item.patient.fullName}</Text>
-            <Text style={styles.patientContact}>Tel: {item.patient.phoneNumber}</Text>
+          <View style={styles.patientRow}>
+            <Avatar uri={item.patient.avatarUrl} name={item.patient.fullName} size={44} borderRadius={14} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.patientName}>{item.patient.fullName}</Text>
+              <Text style={styles.patientContact}>{item.patient.phoneNumber}</Text>
+            </View>
           </View>
 
-          <View
-            style={[
-              styles.statusBadge,
-              item.status === 'CONFIRMED'
-                ? styles.badgeConfirmed
-                : item.status === 'IN_PROGRESS'
-                ? styles.badgeInProgress
-                : styles.badgeCompleted,
-            ]}
-          >
-            <Text style={styles.statusBadgeText}>{item.status}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: badge.bg }]}>
+            <Text style={[styles.statusBadgeText, { color: badge.text }]}>{item.status}</Text>
           </View>
         </View>
 
         <View style={styles.timeBox}>
+          <MaterialIcons name="schedule" size={15} color={COLORS.primary} />
           <Text style={styles.timeText}>
-            📅 {new Date(item.scheduledStart).toLocaleDateString()} •{' '}
-            {new Date(item.scheduledStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} -{' '}
+            {new Date(item.scheduledStart).toLocaleDateString()} ·{' '}
+            {new Date(item.scheduledStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} –{' '}
             {new Date(item.scheduledEnd).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </Text>
         </View>
 
         {item.symptomsDescription ? (
           <Text style={styles.symptomsText}>
-            <Text style={{ fontWeight: '700' }}>Reported Symptoms: </Text>
+            <Text style={styles.symptomsLabel}>Symptoms: </Text>
             {item.symptomsDescription}
           </Text>
         ) : null}
 
-        {/* Action Controls */}
         <View style={styles.cardActions}>
           {isLive && (
             <TouchableOpacity
               style={styles.launchCallBtn}
+              activeOpacity={0.85}
               onPress={() =>
-                navigation.navigate('ConsultationRoom', {
-                  appointmentId: item.id,
-                  doctorName: user?.fullName,
-                  patientName: item.patient.fullName,
-                  channelId: item.meetingChannelId,
-                  isDoctor: true,
+                showAlert({
+                  type: 'info',
+                  title: `Call ${item.patient.fullName}`,
+                  message: 'Choose In-App Video Call or dial their phone directly.',
+                  actions: [
+                    {
+                      text: 'In-App Video Call',
+                      style: 'primary',
+                      onPress: () =>
+                        navigation.navigate('ConsultationRoom', {
+                          appointmentId: item.id,
+                          doctorName: user?.fullName,
+                          patientName: item.patient.fullName,
+                          channelId: item.meetingChannelId,
+                          isDoctor: true,
+                        }),
+                    },
+                    ...(item.patient.phoneNumber
+                      ? [
+                          {
+                            text: `Phone Dial (${item.patient.phoneNumber})`,
+                            style: 'primary' as const,
+                            onPress: () => Linking.openURL(`tel:${item.patient.phoneNumber}`),
+                          },
+                        ]
+                      : []),
+                    { text: 'Cancel', style: 'cancel' },
+                  ],
                 })
               }
             >
-              <Text style={styles.launchCallBtnText}>📹 Launch Agora Video Call</Text>
+              <MaterialIcons name="call" size={18} color={COLORS.white} />
+              <Text style={styles.launchCallBtnText}>Call Patient</Text>
             </TouchableOpacity>
           )}
 
@@ -144,16 +171,35 @@ export default function DoctorDashboardScreen({ navigation }: any) {
                 })
               }
             >
+              <MaterialIcons name="edit-note" size={17} color={COLORS.textSecondary} />
               <Text style={styles.notesBtnText}>
-                {isCompleted ? '📝 Review Notes & Rx' : '📋 Write Notes & Rx'}
+                {isCompleted ? 'Review Notes & Rx' : 'Notes & Rx'}
               </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.labFilesBtn}
+              onPress={() =>
+                navigation.navigate('DirectChat', {
+                  appointmentId: item.id,
+                  participantName: item.patient.fullName,
+                  participantPhone: item.patient.phoneNumber,
+                  participantAvatar: item.patient.avatarUrl,
+                  channelId: item.meetingChannelId,
+                  isDoctor: true,
+                })
+              }
+            >
+              <MaterialIcons name="chat-bubble-outline" size={16} color={COLORS.primary} />
+              <Text style={[styles.labFilesBtnText, { color: COLORS.primary }]}>Chat</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.labFilesBtn}
               onPress={() => handleOpenPatientRecords(item.patient)}
             >
-              <Text style={styles.labFilesBtnText}>🧪 Lab Files</Text>
+              <MaterialIcons name="science" size={16} color={COLORS.info} />
+              <Text style={styles.labFilesBtnText}>Labs</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -162,340 +208,405 @@ export default function DoctorDashboardScreen({ navigation }: any) {
   };
 
   return (
-    <View style={styles.container}>
-      {/* Top Clinical Workspace Banner */}
-      <View style={styles.doctorBanner}>
-        <View style={styles.bannerRow}>
-          <View>
-            <Text style={styles.doctorTitle}>{user?.fullName}</Text>
-            <Text style={styles.doctorSpecialty}>
-              {doctorVerification?.specialty} • MDC: {doctorVerification?.licenseNumber}
-            </Text>
-          </View>
-          <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
-            <Text style={styles.logoutText}>Sign Out</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.scheduleRow}>
-          <Text style={styles.verifiedText}>✓ Super Admin Verified Clinician</Text>
-          <TouchableOpacity
-            style={styles.manageScheduleBtn}
-            onPress={() => navigation.navigate('DoctorSchedule')}
-          >
-            <Text style={styles.manageScheduleText}>⚙️ Edit Weekly Hours</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Appointment Queue Header */}
-      <View style={styles.queueHeader}>
-        <Text style={styles.queueTitle}>Consultation Schedule ({appointments.length})</Text>
-        <TouchableOpacity onPress={fetchDoctorAppointments}>
-          <Text style={styles.refreshText}>Refresh</Text>
-        </TouchableOpacity>
-      </View>
-
-      {isLoading && !refreshing ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#059669" />
-          <Text style={styles.loadingText}>Loading clinical queue...</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={appointments}
-          keyExtractor={(item) => item.id}
-          renderItem={renderAppointment}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => {
-                setRefreshing(true);
-                fetchDoctorAppointments();
-              }}
-              colors={['#059669']}
-            />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyIcon}>🩺</Text>
-              <Text style={styles.emptyTitle}>No Booked Patients</Text>
-              <Text style={styles.emptyText}>
-                Upcoming patient appointments for the day or week will appear here automatically.
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        {/* Clinical Header */}
+        <View style={styles.doctorBanner}>
+          <View style={styles.bannerRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.bannerOverline}>CLINICAL WORKSPACE</Text>
+              <Text style={styles.doctorTitle}>{user?.fullName}</Text>
+              <Text style={styles.doctorSpecialty}>
+                {doctorVerification?.specialty} · MDC {doctorVerification?.licenseNumber}
               </Text>
             </View>
-          }
-        />
-      )}
+            <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
+              <MaterialIcons name="logout" size={16} color={COLORS.white} />
+              <Text style={styles.logoutText}>Sign Out</Text>
+            </TouchableOpacity>
+          </View>
 
-      {/* Patient Uploaded Lab Results & Medical Files Modal */}
-      <Modal visible={recordsModalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <View>
-                <Text style={styles.modalTitle}>
-                  {selectedPatient?.fullName}'s Medical Files
-                </Text>
-                <Text style={styles.modalSub}>
-                  Lab reports, imaging & clinical records
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.closeBtn}
-                onPress={() => setRecordsModalVisible(false)}
-              >
-                <Text style={styles.closeBtnText}>Close ✕</Text>
-              </TouchableOpacity>
+          <View style={styles.scheduleRow}>
+            <View style={styles.verifiedBadge}>
+              <MaterialIcons name="verified" size={14} color="#2DD4BF" />
+              <Text style={styles.verifiedText}>MDC Verified Clinician</Text>
             </View>
-
-            {isLoadingRecords ? (
-              <View style={{ padding: 30, alignItems: 'center' }}>
-                <ActivityIndicator color="#059669" />
-              </View>
-            ) : (
-              <FlatList
-                data={patientRecords}
-                keyExtractor={(r) => r.id}
-                style={{ maxHeight: 360 }}
-                contentContainerStyle={{ gap: 10, paddingVertical: 8 }}
-                renderItem={({ item: rec }) => (
-                  <View style={styles.recordItem}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.recordTitle}>
-                        {rec.fileType === 'LAB_RESULT' ? '🧪 ' : '📄 '}
-                        {rec.title}
-                      </Text>
-                      <Text style={styles.recordMeta}>
-                        {rec.fileType} • {new Date(rec.createdAt).toLocaleDateString()}
-                      </Text>
-                      {rec.notes ? (
-                        <Text style={styles.recordNotes}>Note: {rec.notes}</Text>
-                      ) : null}
-                    </View>
-                    {rec.fileUrl ? (
-                      <TouchableOpacity
-                        style={styles.openDocBtn}
-                        onPress={() => handleOpenDocument(rec.fileUrl)}
-                      >
-                        <Text style={styles.openDocBtnText}>Open ↗</Text>
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
-                )}
-                ListEmptyComponent={
-                  <View style={{ padding: 24, alignItems: 'center' }}>
-                    <Text style={{ color: '#64748b', fontSize: 13 }}>
-                      No lab results or medical documents uploaded by this patient yet.
-                    </Text>
-                  </View>
-                }
-              />
-            )}
+            <TouchableOpacity
+              style={styles.manageScheduleBtn}
+              onPress={() => navigation.navigate('DoctorSchedule')}
+            >
+              <MaterialIcons name="schedule" size={14} color="#CBD5E1" />
+              <Text style={styles.manageScheduleText}>Weekly Hours</Text>
+            </TouchableOpacity>
           </View>
         </View>
-      </Modal>
-    </View>
+
+        {/* Queue Header */}
+        <View style={styles.queueHeader}>
+          <Text style={styles.queueTitle}>Appointments ({appointments.length})</Text>
+          <TouchableOpacity style={styles.refreshBtn} onPress={fetchDoctorAppointments}>
+            <MaterialIcons name="refresh" size={15} color={COLORS.primary} />
+            <Text style={styles.refreshText}>Refresh</Text>
+          </TouchableOpacity>
+        </View>
+
+        {isLoading && !refreshing ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Loading clinical queue...</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={appointments}
+            keyExtractor={(item) => item.id}
+            renderItem={renderAppointment}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => {
+                  setRefreshing(true);
+                  fetchDoctorAppointments();
+                }}
+                tintColor={COLORS.primary}
+                colors={[COLORS.primary]}
+              />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <View style={styles.emptyIconCircle}>
+                  <MaterialIcons name="event-note" size={30} color={COLORS.textSubtle} />
+                </View>
+                <Text style={styles.emptyTitle}>No Booked Patients</Text>
+                <Text style={styles.emptyText}>
+                  Upcoming patient appointments will appear here automatically.
+                </Text>
+              </View>
+            }
+          />
+        )}
+
+        {/* Patient Lab Results Modal */}
+        <Modal visible={recordsModalVisible} animationType="slide" transparent>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <View>
+                  <Text style={styles.modalTitle}>
+                    {selectedPatient?.fullName}'s Medical Files
+                  </Text>
+                  <Text style={styles.modalSub}>Lab reports, imaging & clinical records</Text>
+                </View>
+                <TouchableOpacity onPress={() => setRecordsModalVisible(false)}>
+                  <MaterialIcons name="close" size={22} color={COLORS.textMuted} />
+                </TouchableOpacity>
+              </View>
+
+              {isLoadingRecords ? (
+                <View style={{ padding: 30, alignItems: 'center' }}>
+                  <ActivityIndicator color={COLORS.primary} />
+                </View>
+              ) : (
+                <FlatList
+                  data={patientRecords}
+                  keyExtractor={(r) => r.id}
+                  style={{ maxHeight: 360 }}
+                  contentContainerStyle={{ gap: 10, paddingVertical: 8 }}
+                  renderItem={({ item: rec }) => (
+                    <View style={styles.recordItem}>
+                      <View style={styles.recordIconBox}>
+                        <MaterialIcons
+                          name={rec.fileType === 'LAB_RESULT' ? 'science' : 'description'}
+                          size={18}
+                          color={COLORS.primary}
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.recordTitle}>{rec.title}</Text>
+                        <Text style={styles.recordMeta}>
+                          {rec.fileType.replace('_', ' ')} · {new Date(rec.createdAt).toLocaleDateString()}
+                        </Text>
+                        {rec.notes ? <Text style={styles.recordNotes}>Note: {rec.notes}</Text> : null}
+                      </View>
+                      {rec.fileUrl ? (
+                        <TouchableOpacity
+                          style={styles.openDocBtn}
+                          onPress={() => handleOpenDocument(rec.fileUrl, rec.title)}
+                        >
+                          <Text style={styles.openDocBtnText}>View</Text>
+                          <MaterialIcons name="visibility" size={13} color={COLORS.white} />
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  )}
+                  ListEmptyComponent={
+                    <View style={{ padding: 24, alignItems: 'center' }}>
+                      <Text style={{ color: COLORS.textMuted, fontSize: 13, fontFamily: FONTS.medium }}>
+                        No lab results uploaded by this patient yet.
+                      </Text>
+                    </View>
+                  }
+                />
+              )}
+            </View>
+          </View>
+        </Modal>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.navy,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.bg,
   },
   doctorBanner: {
-    backgroundColor: '#0f172a',
-    padding: 20,
-    gap: 12,
+    backgroundColor: COLORS.navy,
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 18,
+    gap: 14,
   },
   bannerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    gap: 10,
+  },
+  bannerOverline: {
+    fontSize: 10,
+    fontFamily: FONTS.bold,
+    color: '#2DD4BF',
+    letterSpacing: 1,
+    marginBottom: 2,
   },
   doctorTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#ffffff',
+    fontSize: 20,
+    fontFamily: FONTS.extraBold,
+    color: COLORS.white,
   },
   doctorSpecialty: {
     fontSize: 12,
-    color: '#38bdf8',
-    fontWeight: '700',
+    fontFamily: FONTS.medium,
+    color: '#94A3B8',
     marginTop: 2,
   },
   logoutBtn: {
-    backgroundColor: '#334155',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: COLORS.navyLight,
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingVertical: 8,
+    borderRadius: RADIUS.sm,
   },
   logoutText: {
-    color: '#f8fafc',
+    color: COLORS.white,
     fontSize: 11,
-    fontWeight: '700',
+    fontFamily: FONTS.bold,
   },
   scheduleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 8,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#1e293b',
+    borderTopColor: COLORS.navyLight,
+  },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   verifiedText: {
-    color: '#34d399',
-    fontSize: 11,
-    fontWeight: '800',
+    color: '#2DD4BF',
+    fontSize: 12,
+    fontFamily: FONTS.semiBold,
   },
   manageScheduleBtn: {
-    backgroundColor: '#1e293b',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: COLORS.navyLight,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: RADIUS.sm,
   },
   manageScheduleText: {
-    color: '#94a3b8',
-    fontSize: 11,
-    fontWeight: '700',
+    color: '#E2E8F0',
+    fontSize: 12,
+    fontFamily: FONTS.semiBold,
   },
   queueHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingHorizontal: 20,
+    paddingTop: 18,
     paddingBottom: 8,
   },
   queueTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#334155',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontSize: 15,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
+  },
+  refreshBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   refreshText: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#059669',
+    fontFamily: FONTS.bold,
+    color: COLORS.primary,
   },
   listContent: {
-    padding: 16,
-    gap: 12,
+    paddingHorizontal: 18,
+    paddingBottom: 24,
+    paddingTop: 6,
+    gap: 14,
   },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
-    padding: 16,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
+    padding: 18,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 5,
-    elevation: 2,
+    borderColor: COLORS.border,
+    ...SHADOWS.card,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    gap: 10,
+  },
+  patientRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  patientAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: COLORS.primarySoft,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  patientAvatarText: {
+    fontSize: 17,
+    fontFamily: FONTS.bold,
+    color: COLORS.primary,
   },
   patientName: {
     fontSize: 15,
-    fontWeight: '800',
-    color: '#0f172a',
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   patientContact: {
     fontSize: 12,
-    color: '#64748b',
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
     marginTop: 1,
   },
   statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  badgeConfirmed: {
-    backgroundColor: '#ecfdf5',
-  },
-  badgeInProgress: {
-    backgroundColor: '#e0f2fe',
-  },
-  badgeCompleted: {
-    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: RADIUS.pill,
   },
   statusBadgeText: {
     fontSize: 10,
-    fontWeight: '800',
-    color: '#334155',
+    fontFamily: FONTS.bold,
+    letterSpacing: 0.4,
   },
   timeBox: {
-    backgroundColor: '#f8fafc',
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: COLORS.bg,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: RADIUS.sm,
+    marginTop: 12,
   },
   timeText: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#1e293b',
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textSecondary,
   },
   symptomsText: {
     fontSize: 12,
-    color: '#475569',
-    marginTop: 8,
-    lineHeight: 16,
+    fontFamily: FONTS.regular,
+    color: COLORS.textSecondary,
+    marginTop: 10,
+    lineHeight: 17,
+  },
+  symptomsLabel: {
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   cardActions: {
     marginTop: 14,
-    paddingTop: 10,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
+    borderTopColor: COLORS.surfaceMuted,
     gap: 8,
   },
   launchCallBtn: {
-    backgroundColor: '#059669',
-    borderRadius: 12,
-    paddingVertical: 12,
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    height: 44,
+    justifyContent: 'center',
     alignItems: 'center',
   },
   launchCallBtnText: {
-    color: '#ffffff',
+    color: COLORS.white,
     fontSize: 13,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
   },
   secondaryActionRow: {
     flexDirection: 'row',
     gap: 8,
   },
   notesBtn: {
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    paddingVertical: 10,
+    flexDirection: 'row',
+    gap: 6,
+    backgroundColor: COLORS.surfaceMuted,
+    borderRadius: RADIUS.md,
+    height: 40,
+    justifyContent: 'center',
     alignItems: 'center',
   },
   notesBtnText: {
-    color: '#334155',
+    color: COLORS.textSecondary,
     fontSize: 12,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
   },
   labFilesBtn: {
-    backgroundColor: '#eff6ff',
+    flexDirection: 'row',
+    gap: 6,
+    backgroundColor: COLORS.infoSoft,
     borderWidth: 1,
-    borderColor: '#bfdbfe',
-    borderRadius: 12,
+    borderColor: COLORS.infoBorder,
+    borderRadius: RADIUS.md,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    height: 40,
     justifyContent: 'center',
     alignItems: 'center',
   },
   labFilesBtnText: {
-    color: '#0284c7',
+    color: COLORS.info,
     fontSize: 12,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
   },
   loadingContainer: {
     flex: 1,
@@ -504,25 +615,32 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 10,
-    color: '#64748b',
+    color: COLORS.textMuted,
     fontSize: 13,
+    fontFamily: FONTS.medium,
   },
   emptyContainer: {
     alignItems: 'center',
     padding: 40,
   },
-  emptyIcon: {
-    fontSize: 40,
-    marginBottom: 8,
+  emptyIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: COLORS.surfaceMuted,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
   },
   emptyTitle: {
     fontSize: 16,
-    fontWeight: '800',
-    color: '#334155',
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   emptyText: {
-    fontSize: 12,
-    color: '#94a3b8',
+    fontSize: 13,
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
     marginTop: 4,
     textAlign: 'center',
     lineHeight: 18,
@@ -533,71 +651,77 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 20,
+    padding: 22,
     gap: 12,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: COLORS.surfaceMuted,
   },
   modalTitle: {
     fontSize: 16,
-    fontWeight: '900',
-    color: '#0f172a',
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   modalSub: {
     fontSize: 12,
-    color: '#64748b',
-  },
-  closeBtn: {
-    padding: 6,
-  },
-  closeBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#64748b',
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
   },
   recordItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
+    backgroundColor: COLORS.bg,
+    borderRadius: RADIUS.md,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: COLORS.border,
     gap: 10,
+  },
+  recordIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: COLORS.primarySoft,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   recordTitle: {
     fontSize: 13,
-    fontWeight: '800',
-    color: '#0f172a',
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   recordMeta: {
     fontSize: 11,
-    color: '#64748b',
-    marginTop: 2,
+    fontFamily: FONTS.medium,
+    color: COLORS.textMuted,
+    marginTop: 1,
   },
   recordNotes: {
     fontSize: 11,
-    color: '#475569',
-    marginTop: 4,
+    fontFamily: FONTS.regular,
+    color: COLORS.textSecondary,
+    marginTop: 3,
   },
   openDocBtn: {
-    backgroundColor: '#059669',
-    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 11,
     paddingVertical: 7,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
   },
   openDocBtnText: {
-    color: '#ffffff',
+    color: COLORS.white,
     fontSize: 11,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
   },
 });

@@ -8,15 +8,19 @@ import {
   ActivityIndicator,
   TextInput,
   Modal,
-  Alert,
-  Linking,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import { apiClient, API_URL } from '../../api/client';
+import { MaterialIcons } from '@expo/vector-icons';
+import { apiClient } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
+import { useAlert } from '../../context/AlertContext';
+import { useDocumentViewer } from '../../context/DocumentViewerContext';
+import { COLORS, FONTS, RADIUS, SHADOWS } from '../../theme/theme';
 
 export default function LabResultsScreen() {
   const { user } = useAuth();
+  const { showAlert } = useAlert();
+  const { openDocument } = useDocumentViewer();
   const [records, setRecords] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
@@ -60,14 +64,22 @@ export default function LabResultsScreen() {
           setTitle(asset.name.replace(/\.[^/.]+$/, ''));
         }
       }
-    } catch (err) {
-      Alert.alert('File Picker Error', 'Could not open document picker on this device.');
+    } catch {
+      showAlert({
+        type: 'error',
+        title: 'File Picker Error',
+        message: 'Could not open document picker on this device.',
+      });
     }
   };
 
   const handleUpload = async () => {
     if (!title.trim()) {
-      Alert.alert('Required', 'Please enter a title for this lab report.');
+      showAlert({
+        type: 'warning',
+        title: 'Title Required',
+        message: 'Please enter a title for this lab report before uploading.',
+      });
       return;
     }
 
@@ -97,45 +109,52 @@ export default function LabResultsScreen() {
       setNotes('');
       setPickedFile(null);
       fetchRecords();
-      Alert.alert('Success', 'Medical document uploaded and linked to your profile.');
+      showAlert({
+        type: 'success',
+        title: 'Document Uploaded',
+        message: 'Medical document uploaded and linked to your profile.',
+      });
     } catch (err: any) {
-      Alert.alert('Upload Error', err.response?.data?.message || 'Failed to upload document.');
+      showAlert({
+        type: 'error',
+        title: 'Upload Error',
+        message: err.response?.data?.message || 'Failed to upload document.',
+      });
     } finally {
       setIsUploading(false);
     }
   };
 
-  const handleOpenDocument = async (rawUrl: string) => {
+  const handleOpenDocument = (rawUrl: string, docTitle?: string) => {
     if (!rawUrl) return;
-    const baseServer = API_URL.replace('/api/v1', '');
-    const resolvedUrl = rawUrl.replace(/http:\/\/localhost:\d+/, baseServer);
-    try {
-      await Linking.openURL(resolvedUrl);
-    } catch {
-      Alert.alert('Cannot Open File', `Document URL: ${resolvedUrl}`);
-    }
+    openDocument(rawUrl, docTitle);
   };
 
   const renderItem = ({ item }: { item: any }) => (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
         <View style={styles.iconContainer}>
-          <Text style={styles.iconText}>{item.fileType === 'LAB_RESULT' ? '🧪' : '📄'}</Text>
+          <MaterialIcons
+            name={item.fileType === 'LAB_RESULT' ? 'science' : 'description'}
+            size={20}
+            color={COLORS.primary}
+          />
         </View>
 
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>{item.title}</Text>
           <Text style={styles.meta}>
-            {item.fileType} • {new Date(item.createdAt).toLocaleDateString()}
+            {item.fileType.replace('_', ' ')} · {new Date(item.createdAt).toLocaleDateString()}
           </Text>
         </View>
 
         {item.fileUrl ? (
           <TouchableOpacity
             style={styles.openFileBtn}
-            onPress={() => handleOpenDocument(item.fileUrl)}
+            onPress={() => handleOpenDocument(item.fileUrl, item.title)}
           >
-            <Text style={styles.openFileBtnText}>Open ↗</Text>
+            <Text style={styles.openFileBtnText}>View</Text>
+            <MaterialIcons name="visibility" size={14} color={COLORS.info} />
           </TouchableOpacity>
         ) : null}
       </View>
@@ -144,7 +163,10 @@ export default function LabResultsScreen() {
 
       <View style={styles.cardFooter}>
         <Text style={styles.uploaderText}>Uploaded by {item.uploadedBy?.fullName || 'You'}</Text>
-        <Text style={styles.readyText}>✓ Available to Doctor</Text>
+        <View style={styles.readyBadge}>
+          <MaterialIcons name="check-circle" size={13} color={COLORS.success} />
+          <Text style={styles.readyText}>Shared with Doctor</Text>
+        </View>
       </View>
     </View>
   );
@@ -152,19 +174,20 @@ export default function LabResultsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.topBar}>
-        <View>
-          <Text style={styles.screenTitle}>My Lab Results & Files</Text>
-          <Text style={styles.screenSubtitle}>Upload test documents for your doctor to review.</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.screenTitle}>Clinical Documents</Text>
+          <Text style={styles.screenSubtitle}>Upload lab tests or imaging for your physician.</Text>
         </View>
 
         <TouchableOpacity style={styles.addBtn} onPress={() => setModalVisible(true)}>
-          <Text style={styles.addBtnText}>+ Upload</Text>
+          <MaterialIcons name="upload-file" size={16} color={COLORS.white} />
+          <Text style={styles.addBtnText}>Upload</Text>
         </TouchableOpacity>
       </View>
 
       {isLoading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#059669" />
+          <ActivityIndicator size="large" color={COLORS.primary} />
           <Text style={styles.loadingText}>Fetching lab reports...</Text>
         </View>
       ) : (
@@ -173,12 +196,15 @@ export default function LabResultsScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyIcon}>🧪</Text>
+              <View style={styles.emptyIconCircle}>
+                <MaterialIcons name="science" size={30} color={COLORS.textSubtle} />
+              </View>
               <Text style={styles.emptyTitle}>No Lab Results Uploaded</Text>
               <Text style={styles.emptyText}>
-                Upload previous blood tests, pathology reports, or scan images so your consulting doctor can inspect them.
+                Upload blood tests, pathology reports, or scan images so your consulting doctor can inspect them.
               </Text>
             </View>
           }
@@ -189,23 +215,39 @@ export default function LabResultsScreen() {
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Upload Medical Document</Text>
-            <Text style={styles.modalDesc}>Supported formats: PDF, JPG, PNG (Max 25 MB)</Text>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Upload Medical Document</Text>
+                <Text style={styles.modalDesc}>PDF, JPG, or PNG (Max 25 MB)</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  setModalVisible(false);
+                  setPickedFile(null);
+                }}
+              >
+                <MaterialIcons name="close" size={22} color={COLORS.textMuted} />
+              </TouchableOpacity>
+            </View>
 
-            <Text style={styles.label}>Select File from Device</Text>
             <TouchableOpacity style={styles.filePickerBtn} onPress={handlePickDocument}>
+              <MaterialIcons
+                name={pickedFile ? 'attach-file' : 'cloud-upload'}
+                size={20}
+                color={COLORS.primary}
+              />
               <Text style={styles.filePickerBtnText}>
                 {pickedFile
-                  ? `📎 Selected: ${pickedFile.name}`
-                  : '📂 Choose PDF or Image from Device (or leave blank for Sample PDF)'}
+                  ? `Selected: ${pickedFile.name}`
+                  : 'Choose PDF or Image from Device'}
               </Text>
             </TouchableOpacity>
 
             <Text style={styles.label}>Document Title</Text>
             <TextInput
               style={styles.input}
-              placeholder="e.g. Complete Blood Count (CBC) - Nov 2026"
-              placeholderTextColor="#94a3b8"
+              placeholder="e.g. Complete Blood Count (CBC)"
+              placeholderTextColor={COLORS.textSubtle}
               value={title}
               onChangeText={setTitle}
             />
@@ -229,7 +271,7 @@ export default function LabResultsScreen() {
             <TextInput
               style={[styles.input, styles.textArea]}
               placeholder="Brief context on when or where this test was conducted..."
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={COLORS.textSubtle}
               value={notes}
               onChangeText={setNotes}
               multiline
@@ -254,7 +296,7 @@ export default function LabResultsScreen() {
                 disabled={isUploading}
               >
                 {isUploading ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={COLORS.white} />
                 ) : (
                   <Text style={styles.submitUploadBtnText}>Save & Upload</Text>
                 )}
@@ -270,48 +312,55 @@ export default function LabResultsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.bg,
   },
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#ffffff',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    borderBottomColor: COLORS.border,
+    gap: 12,
   },
   screenTitle: {
     fontSize: 16,
-    fontWeight: '900',
-    color: '#0f172a',
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   screenSubtitle: {
-    fontSize: 11,
-    color: '#64748b',
+    fontSize: 12,
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
     marginTop: 2,
   },
   addBtn: {
-    backgroundColor: '#059669',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.primary,
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingVertical: 9,
+    borderRadius: RADIUS.md,
   },
   addBtnText: {
-    color: '#ffffff',
+    color: COLORS.white,
     fontSize: 12,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
   },
   listContent: {
-    padding: 16,
+    padding: 18,
     gap: 12,
   },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: COLORS.border,
+    ...SHADOWS.card,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -319,45 +368,47 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   iconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#ecfdf5',
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: COLORS.primarySoft,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  iconText: {
-    fontSize: 20,
-  },
   title: {
     fontSize: 14,
-    fontWeight: '800',
-    color: '#0f172a',
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   meta: {
     fontSize: 11,
-    color: '#64748b',
+    fontFamily: FONTS.medium,
+    color: COLORS.textMuted,
     marginTop: 2,
   },
   openFileBtn: {
-    backgroundColor: '#eff6ff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.infoSoft,
     borderWidth: 1,
-    borderColor: '#bfdbfe',
+    borderColor: COLORS.infoBorder,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: RADIUS.sm,
   },
   openFileBtnText: {
-    color: '#0284c7',
+    color: COLORS.info,
     fontSize: 11,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
   },
   notesText: {
     fontSize: 12,
-    color: '#475569',
-    backgroundColor: '#f8fafc',
-    padding: 8,
-    borderRadius: 8,
+    fontFamily: FONTS.regular,
+    color: COLORS.textSecondary,
+    backgroundColor: COLORS.bg,
+    padding: 10,
+    borderRadius: RADIUS.sm,
     marginTop: 10,
   },
   cardFooter: {
@@ -365,18 +416,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 12,
-    paddingTop: 8,
+    paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
+    borderTopColor: COLORS.surfaceMuted,
   },
   uploaderText: {
     fontSize: 11,
-    color: '#94a3b8',
+    fontFamily: FONTS.medium,
+    color: COLORS.textSubtle,
+  },
+  readyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   readyText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#059669',
+    fontSize: 11,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.success,
   },
   loadingContainer: {
     flex: 1,
@@ -385,25 +442,32 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 10,
-    color: '#64748b',
+    color: COLORS.textMuted,
     fontSize: 13,
+    fontFamily: FONTS.medium,
   },
   emptyContainer: {
     alignItems: 'center',
     padding: 40,
   },
-  emptyIcon: {
-    fontSize: 40,
-    marginBottom: 8,
+  emptyIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: COLORS.surfaceMuted,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
   },
   emptyTitle: {
     fontSize: 16,
-    fontWeight: '800',
-    color: '#334155',
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   emptyText: {
-    fontSize: 12,
-    color: '#94a3b8',
+    fontSize: 13,
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
     marginTop: 4,
     textAlign: 'center',
     lineHeight: 18,
@@ -414,53 +478,61 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 24,
+    padding: 22,
     gap: 12,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: '900',
-    color: '#0f172a',
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   modalDesc: {
     fontSize: 12,
-    color: '#64748b',
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
   },
   filePickerBtn: {
-    backgroundColor: '#ecfdf5',
-    borderWidth: 1,
-    borderColor: '#a7f3d0',
-    borderStyle: 'dashed',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.primarySoft,
+    borderWidth: 1,
+    borderColor: COLORS.primaryLight,
+    borderStyle: 'dashed',
+    borderRadius: RADIUS.md,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
   },
   filePickerBtnText: {
-    color: '#047857',
+    color: COLORS.primaryDark,
     fontSize: 12,
-    fontWeight: '800',
-    textAlign: 'center',
+    fontFamily: FONTS.bold,
   },
   label: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#475569',
-    textTransform: 'uppercase',
-    marginTop: 4,
+    fontSize: 12,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textSecondary,
+    marginTop: 2,
   },
   input: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.bg,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 13,
-    color: '#0f172a',
+    borderColor: COLORS.borderStrong,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 14,
+    fontFamily: FONTS.medium,
+    color: COLORS.text,
   },
   typeRow: {
     flexDirection: 'row',
@@ -468,58 +540,60 @@ const styles = StyleSheet.create({
   },
   typePill: {
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
-    backgroundColor: '#f1f5f9',
+    paddingVertical: 7,
+    borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: COLORS.border,
   },
   typePillActive: {
-    backgroundColor: '#059669',
-    borderColor: '#059669',
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
   typeText: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#475569',
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textSecondary,
   },
   typeTextActive: {
-    color: '#ffffff',
+    color: COLORS.white,
   },
   textArea: {
-    height: 70,
+    height: 76,
     textAlignVertical: 'top',
   },
   modalActions: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 10,
+    marginTop: 8,
   },
   cancelBtn: {
     flex: 1,
-    paddingVertical: 12,
+    height: 46,
+    justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 12,
-    backgroundColor: '#f1f5f9',
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surfaceMuted,
   },
   cancelBtnText: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#475569',
+    fontFamily: FONTS.bold,
+    color: COLORS.textSecondary,
   },
   submitUploadBtn: {
     flex: 2,
-    paddingVertical: 12,
+    height: 46,
+    justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 12,
-    backgroundColor: '#059669',
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.primary,
   },
   btnDisabled: {
     opacity: 0.6,
   },
   submitUploadBtnText: {
     fontSize: 13,
-    fontWeight: '800',
-    color: '#ffffff',
+    fontFamily: FONTS.bold,
+    color: COLORS.white,
   },
 });

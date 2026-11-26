@@ -8,9 +8,13 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
+  SafeAreaView,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { apiClient } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
+import Avatar from '../../components/Avatar';
+import { COLORS, FONTS, RADIUS, SHADOWS } from '../../theme/theme';
 
 export default function DoctorDiscoveryScreen({ navigation }: any) {
   const { user, subscription, logout } = useAuth();
@@ -43,271 +47,334 @@ export default function DoctorDiscoveryScreen({ navigation }: any) {
     }
   };
 
-  const handleSearchSubmit = () => {
-    fetchDoctors();
-  };
-
   const renderDoctorItem = ({ item }: { item: any }) => (
-    <View style={styles.doctorCard}>
+    <TouchableOpacity
+      style={styles.doctorCard}
+      activeOpacity={0.9}
+      onPress={() => navigation.navigate('DoctorDetail', { doctor: item })}
+    >
       <View style={styles.doctorHeader}>
-        <View style={styles.avatarPlaceholder}>
-          <Text style={styles.avatarText}>
-            {item.user.fullName.replace('Dr. ', '').charAt(0)}
-          </Text>
-        </View>
+        <Avatar uri={item.user.avatarUrl} name={item.user.fullName} size={54} borderRadius={18} />
 
         <View style={styles.doctorInfo}>
           <View style={styles.verifiedRow}>
-            <Text style={styles.doctorName}>{item.user.fullName}</Text>
-            <Text style={styles.verifiedBadge}>✓ MDC</Text>
+            <Text style={styles.doctorName} numberOfLines={1}>
+              {item.user.fullName}
+            </Text>
+            <View style={styles.verifiedBadge}>
+              <MaterialIcons name="verified" size={12} color={COLORS.primary} />
+              <Text style={styles.verifiedBadgeText}>MDC</Text>
+            </View>
           </View>
+
           <Text style={styles.doctorSpecialty}>{item.specialty}</Text>
-          <Text style={styles.hospitalText}>{item.hospitalAffiliation || 'Private Practice'}</Text>
-          <Text style={styles.experienceText}>{item.yearsOfExperience} yrs clinical experience</Text>
+
+          <View style={styles.metaInline}>
+            <MaterialIcons name="local-hospital" size={13} color={COLORS.textSubtle} />
+            <Text style={styles.hospitalText} numberOfLines={1}>
+              {item.hospitalAffiliation || 'Private Practice'}
+            </Text>
+          </View>
+
+          <View style={styles.metaInline}>
+            <MaterialIcons name="work-outline" size={13} color={COLORS.textSubtle} />
+            <Text style={styles.experienceText}>
+              {item.yearsOfExperience} yrs clinical experience
+            </Text>
+          </View>
         </View>
       </View>
 
       {item.bio ? (
         <Text style={styles.doctorBio} numberOfLines={2}>
-          "{item.bio}"
+          {item.bio}
         </Text>
       ) : null}
 
       <View style={styles.cardFooter}>
         <View>
-          <Text style={styles.feeLabel}>Consultation</Text>
+          <Text style={styles.feeLabel}>Consultation Fee</Text>
           <Text style={styles.feeValue}>
-            {parseFloat(item.consultationFee) === 0 ? 'Included in Plan' : `${item.consultationFee} GHS`}
+            {parseFloat(item.consultationFee) === 0 ? 'Included in Plan' : `GHS ${item.consultationFee}`}
           </Text>
         </View>
 
         <TouchableOpacity
           style={styles.bookBtn}
           onPress={() => navigation.navigate('DoctorDetail', { doctor: item })}
+          activeOpacity={0.85}
         >
-          <Text style={styles.bookBtnText}>View Availability</Text>
+          <Text style={styles.bookBtnText}>Book Slot</Text>
+          <MaterialIcons name="arrow-forward" size={14} color={COLORS.white} />
         </TouchableOpacity>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   return (
-    <View style={styles.container}>
-      {/* Top Welcome & 90-Day Free Trial Banner */}
-      <View style={styles.topBanner}>
-        <View style={styles.welcomeRow}>
-          <Text style={styles.welcomeText}>Hello, {user?.fullName}</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <TouchableOpacity
-              style={styles.trialPill}
-              onPress={() => navigation.getParent()?.navigate('Plan & MoMo')}
-            >
-              <Text style={styles.trialPillText}>
-                🎁 {subscription?.trialDaysRemaining ?? 90}d Trial
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        {/* Clean Modern Top Header */}
+        <View style={styles.topHeader}>
+          <View style={styles.welcomeRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.greetingLabel}>Welcome back</Text>
+              <Text style={styles.welcomeText} numberOfLines={1}>
+                {user?.fullName}
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.trialPill, { backgroundColor: '#065f46' }]}
-              onPress={logout}
-            >
-              <Text style={styles.trialPillText}>Sign Out</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-        <Text style={styles.topSubtext}>Search Ghana's accredited doctors and book instant slots.</Text>
-      </View>
+            </View>
 
-      {/* Search Input */}
-      <View style={styles.searchSection}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search doctor by name, specialty, or hospital..."
-          placeholderTextColor="#94a3b8"
-          value={search}
-          onChangeText={setSearch}
-          onSubmitEditing={handleSearchSubmit}
-          returnKeyType="search"
-        />
-      </View>
-
-      {/* Specialty Filter Horizontal Scroll */}
-      <View style={styles.specialtyContainer}>
-        <FlatList
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          data={specialties}
-          keyExtractor={(item) => item}
-          renderItem={({ item }) => {
-            const isSelected = (selectedSpecialty === '' && item === 'All') || selectedSpecialty === item;
-            return (
+            <View style={styles.headerActions}>
               <TouchableOpacity
-                style={[styles.specialtyPill, isSelected && styles.specialtyPillActive]}
-                onPress={() => setSelectedSpecialty(item === 'All' ? '' : item)}
+                style={styles.trialPill}
+                onPress={() => navigation.getParent()?.navigate('Plan & MoMo')}
               >
-                <Text style={[styles.specialtyText, isSelected && styles.specialtyTextActive]}>
-                  {item}
+                <MaterialIcons name="workspace-premium" size={14} color={COLORS.primaryDark} />
+                <Text style={styles.trialPillText}>
+                  {subscription?.trialDaysRemaining ?? 90}d Trial
                 </Text>
               </TouchableOpacity>
-            );
-          }}
-          contentContainerStyle={styles.specialtiesList}
-        />
-      </View>
 
-      {/* Doctors List */}
-      {isLoading && !refreshing ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#059669" />
-          <Text style={styles.loadingText}>Finding verified doctors...</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={doctors}
-          keyExtractor={(item) => item.id}
-          renderItem={renderDoctorItem}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => {
-                setRefreshing(true);
-                fetchDoctors();
-              }}
-              colors={['#059669']}
-            />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyTitle}>No doctors found</Text>
-              <Text style={styles.emptyText}>Try searching for a different specialty or hospital.</Text>
+              <TouchableOpacity
+                style={styles.iconActionBtn}
+                onPress={logout}
+                accessibilityLabel="Sign Out"
+              >
+                <MaterialIcons name="logout" size={18} color={COLORS.textSecondary} />
+              </TouchableOpacity>
             </View>
-          }
-        />
-      )}
-    </View>
+          </View>
+
+          {/* Search Bar */}
+          <View style={styles.searchBar}>
+            <MaterialIcons name="search" size={20} color={COLORS.textSubtle} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search doctors, specialties, hospitals..."
+              placeholderTextColor={COLORS.textSubtle}
+              value={search}
+              onChangeText={setSearch}
+              onSubmitEditing={fetchDoctors}
+              returnKeyType="search"
+            />
+            {search.length > 0 && (
+              <TouchableOpacity
+                onPress={() => {
+                  setSearch('');
+                  fetchDoctors();
+                }}
+              >
+                <MaterialIcons name="close" size={18} color={COLORS.textSubtle} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {/* Specialty Filter Pills */}
+        <View style={styles.specialtyContainer}>
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            data={specialties}
+            keyExtractor={(item) => item}
+            renderItem={({ item }) => {
+              const isSelected = (selectedSpecialty === '' && item === 'All') || selectedSpecialty === item;
+              return (
+                <TouchableOpacity
+                  style={[styles.specialtyPill, isSelected && styles.specialtyPillActive]}
+                  onPress={() => setSelectedSpecialty(item === 'All' ? '' : item)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.specialtyText, isSelected && styles.specialtyTextActive]}>
+                    {item}
+                  </Text>
+                </TouchableOpacity>
+              );
+            }}
+            contentContainerStyle={styles.specialtiesList}
+          />
+        </View>
+
+        {/* Doctors List */}
+        {isLoading && !refreshing ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Finding verified doctors...</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={doctors}
+            keyExtractor={(item) => item.id}
+            renderItem={renderDoctorItem}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => {
+                  setRefreshing(true);
+                  fetchDoctors();
+                }}
+                tintColor={COLORS.primary}
+                colors={[COLORS.primary]}
+              />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <View style={styles.emptyIconCircle}>
+                  <MaterialIcons name="person-search" size={32} color={COLORS.textSubtle} />
+                </View>
+                <Text style={styles.emptyTitle}>No doctors found</Text>
+                <Text style={styles.emptyText}>
+                  Try adjusting your search or selecting a different specialty.
+                </Text>
+              </View>
+            }
+          />
+        )}
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.surface,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.bg,
   },
-  topBanner: {
-    backgroundColor: '#059669',
+  topHeader: {
+    backgroundColor: COLORS.surface,
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 20,
+    paddingTop: 12,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
   welcomeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 14,
+  },
+  greetingLabel: {
+    fontSize: 12,
+    fontFamily: FONTS.medium,
+    color: COLORS.textMuted,
   },
   welcomeText: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '900',
+    fontSize: 20,
+    fontFamily: FONTS.extraBold,
+    color: COLORS.text,
+    letterSpacing: -0.4,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   trialPill: {
-    backgroundColor: '#047857',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.primarySoft,
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
+    paddingVertical: 6,
+    borderRadius: RADIUS.pill,
     borderWidth: 1,
-    borderColor: '#34d399',
+    borderColor: COLORS.primaryLight,
   },
   trialPillText: {
-    color: '#ffffff',
+    color: COLORS.primaryDark,
     fontSize: 11,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
   },
-  topSubtext: {
-    color: '#d1fae5',
-    fontSize: 12,
-    marginTop: 4,
+  iconActionBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: COLORS.surfaceMuted,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  searchSection: {
-    paddingHorizontal: 16,
-    marginTop: -12,
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: COLORS.bg,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 14,
+    height: 46,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   searchInput: {
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 13,
-    color: '#0f172a',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 3,
+    flex: 1,
+    fontSize: 14,
+    fontFamily: FONTS.medium,
+    color: COLORS.text,
   },
   specialtyContainer: {
-    marginTop: 12,
-    marginBottom: 4,
+    paddingVertical: 12,
   },
   specialtiesList: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     gap: 8,
   },
   specialtyPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: '#ffffff',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: RADIUS.pill,
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: COLORS.border,
   },
   specialtyPillActive: {
-    backgroundColor: '#059669',
-    borderColor: '#059669',
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
   specialtyText: {
     fontSize: 12,
-    color: '#475569',
-    fontWeight: '700',
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textSecondary,
   },
   specialtyTextActive: {
-    color: '#ffffff',
+    color: COLORS.white,
   },
   listContent: {
-    padding: 16,
-    gap: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+    gap: 14,
   },
   doctorCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
-    padding: 16,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
+    padding: 18,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 5,
-    elevation: 2,
+    borderColor: COLORS.border,
+    ...SHADOWS.card,
   },
   doctorHeader: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 14,
   },
-  avatarPlaceholder: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#ecfdf5',
+  avatarBox: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    backgroundColor: COLORS.primarySoft,
     borderWidth: 1,
-    borderColor: '#a7f3d0',
+    borderColor: COLORS.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatarText: {
     fontSize: 22,
-    fontWeight: '800',
-    color: '#059669',
+    fontFamily: FONTS.extraBold,
+    color: COLORS.primary,
   },
   doctorInfo: {
     flex: 1,
@@ -319,74 +386,93 @@ const styles = StyleSheet.create({
   },
   doctorName: {
     fontSize: 15,
-    fontWeight: '800',
-    color: '#0f172a',
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
+    flexShrink: 1,
   },
   verifiedBadge: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#059669',
-    backgroundColor: '#ecfdf5',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: COLORS.primarySoft,
     paddingHorizontal: 6,
-    paddingVertical: 1,
+    paddingVertical: 2,
     borderRadius: 6,
+  },
+  verifiedBadgeText: {
+    fontSize: 10,
+    fontFamily: FONTS.bold,
+    color: COLORS.primaryDark,
   },
   doctorSpecialty: {
     fontSize: 13,
-    color: '#0284c7',
-    fontWeight: '700',
-    marginTop: 1,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.info,
+    marginTop: 2,
+    marginBottom: 4,
+  },
+  metaInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 2,
   },
   hospitalText: {
-    fontSize: 11,
-    color: '#64748b',
-    marginTop: 1,
+    fontSize: 12,
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
+    flex: 1,
   },
   experienceText: {
-    fontSize: 11,
-    color: '#94a3b8',
-    fontWeight: '600',
+    fontSize: 12,
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
   },
   doctorBio: {
     fontSize: 12,
-    color: '#475569',
-    fontStyle: 'italic',
-    backgroundColor: '#f8fafc',
-    padding: 10,
-    borderRadius: 10,
-    marginTop: 10,
-    lineHeight: 16,
+    fontFamily: FONTS.regular,
+    color: COLORS.textSecondary,
+    backgroundColor: COLORS.bg,
+    padding: 12,
+    borderRadius: RADIUS.md,
+    marginTop: 12,
+    lineHeight: 18,
   },
   cardFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 12,
-    paddingTop: 10,
+    marginTop: 14,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
+    borderTopColor: COLORS.surfaceMuted,
   },
   feeLabel: {
     fontSize: 10,
-    color: '#94a3b8',
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textSubtle,
     textTransform: 'uppercase',
-    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   feeValue: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0f172a',
+    fontSize: 14,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
+    marginTop: 1,
   },
   bookBtn: {
-    backgroundColor: '#059669',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.primary,
     paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 10,
+    paddingVertical: 10,
+    borderRadius: RADIUS.md,
   },
   bookBtnText: {
-    color: '#ffffff',
+    color: COLORS.white,
     fontSize: 12,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
   },
   loadingContainer: {
     flex: 1,
@@ -395,23 +481,35 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   loadingText: {
-    color: '#64748b',
+    color: COLORS.textMuted,
     fontSize: 13,
+    fontFamily: FONTS.medium,
     marginTop: 10,
   },
   emptyContainer: {
     alignItems: 'center',
     padding: 40,
   },
+  emptyIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: COLORS.surfaceMuted,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   emptyTitle: {
     fontSize: 16,
-    fontWeight: '800',
-    color: '#334155',
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   emptyText: {
-    fontSize: 12,
-    color: '#94a3b8',
+    fontSize: 13,
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
     marginTop: 4,
     textAlign: 'center',
+    lineHeight: 18,
   },
 });

@@ -7,12 +7,15 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { apiClient } from '../../api/client';
+import { useAlert } from '../../context/AlertContext';
+import { COLORS, FONTS, RADIUS, SHADOWS } from '../../theme/theme';
 
 export default function PostConsultationScreen({ route, navigation }: any) {
   const { appointment } = route.params;
+  const { showAlert } = useAlert();
   const existingConsultation = appointment?.consultation;
   const existingRx = existingConsultation?.prescriptions?.[0]?.medications;
 
@@ -46,7 +49,7 @@ export default function PostConsultationScreen({ route, navigation }: any) {
         }
       }
     } catch {
-      // No existing consultation record yet — start fresh
+      // Fresh consultation
     }
   };
 
@@ -70,23 +73,22 @@ export default function PostConsultationScreen({ route, navigation }: any) {
 
   const handleSubmit = async () => {
     if (!diagnosis.trim() || !patientSummary.trim()) {
-      Alert.alert(
-        'Required Information',
-        'Diagnosis and Patient Summary are required to complete this session.'
-      );
+      showAlert({
+        type: 'warning',
+        title: 'Required Information',
+        message: 'Diagnosis and Patient Summary are required to complete this session.',
+      });
       return;
     }
 
     setIsSubmitting(true);
     try {
-      // 1. Save consultation clinical notes
       await apiClient.post(`/consultations/${appointment.id}/notes`, {
         diagnosis: diagnosis.trim(),
         patientSummary: patientSummary.trim(),
         doctorNotes: doctorNotes.trim() || undefined,
       });
 
-      // 2. Issue digital prescription if any medications have a drug name
       const validMeds = medications.filter((m) => m.drugName && m.drugName.trim().length > 0);
       if (validMeds.length > 0) {
         await apiClient.post(`/consultations/${appointment.id}/prescriptions`, {
@@ -94,25 +96,31 @@ export default function PostConsultationScreen({ route, navigation }: any) {
         });
       }
 
-      Alert.alert(
-        '✓ Documentation Complete',
-        `Clinical notes and prescription have been synchronized to ${appointment.patient.fullName}'s profile.`,
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
+      showAlert({
+        type: 'success',
+        title: 'Documentation Saved',
+        message: `Clinical notes and prescription have been synchronized to ${appointment.patient.fullName}'s profile.`,
+        actions: [{ text: 'Done', style: 'primary', onPress: () => navigation.goBack() }],
+      });
     } catch (err: any) {
-      Alert.alert(
-        'Submission Error',
-        err.response?.data?.message || 'Failed to save post-consultation documentation.'
-      );
+      showAlert({
+        type: 'error',
+        title: 'Submission Error',
+        message: err.response?.data?.message || 'Failed to save post-consultation documentation.',
+      });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.header}>
-        <Text style={styles.patientTitle}>Consultation with {appointment.patient.fullName}</Text>
+        <Text style={styles.patientTitle}>{appointment.patient.fullName}</Text>
         <Text style={styles.sessionDate}>
           Session Date: {new Date(appointment.scheduledStart).toLocaleDateString()}
         </Text>
@@ -120,13 +128,16 @@ export default function PostConsultationScreen({ route, navigation }: any) {
 
       {/* Clinical Notes Card */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Clinical Diagnosis & Findings</Text>
+        <View style={styles.sectionTitleRow}>
+          <MaterialIcons name="assignment" size={18} color={COLORS.primary} />
+          <Text style={styles.cardTitle}>Clinical Diagnosis & Findings</Text>
+        </View>
 
         <Text style={styles.label}>Formal Diagnosis *</Text>
         <TextInput
           style={styles.input}
           placeholder="e.g. Essential Hypertension Stage 1"
-          placeholderTextColor="#94a3b8"
+          placeholderTextColor={COLORS.textSubtle}
           value={diagnosis}
           onChangeText={setDiagnosis}
         />
@@ -135,18 +146,18 @@ export default function PostConsultationScreen({ route, navigation }: any) {
         <TextInput
           style={[styles.input, styles.textArea]}
           placeholder="Summary of findings and lifestyle recommendations visible to patient..."
-          placeholderTextColor="#94a3b8"
+          placeholderTextColor={COLORS.textSubtle}
           value={patientSummary}
           onChangeText={setPatientSummary}
           multiline
           numberOfLines={3}
         />
 
-        <Text style={styles.label}>Confidential Doctor Notes (Private - Doctors Only)</Text>
+        <Text style={styles.label}>Confidential Doctor Notes (Private)</Text>
         <TextInput
           style={[styles.input, styles.textArea]}
-          placeholder="Confidential clinician notes and follow-up markers (never shown to patients)..."
-          placeholderTextColor="#94a3b8"
+          placeholder="Private clinician notes and follow-up markers (never shown to patients)..."
+          placeholderTextColor={COLORS.textSubtle}
           value={doctorNotes}
           onChangeText={setDoctorNotes}
           multiline
@@ -154,12 +165,16 @@ export default function PostConsultationScreen({ route, navigation }: any) {
         />
       </View>
 
-      {/* Digital Prescription Builder Card */}
+      {/* Prescription Builder Card */}
       <View style={styles.card}>
         <View style={styles.rxHeaderRow}>
-          <Text style={styles.cardTitle}>Electronic Prescription (Rx)</Text>
+          <View style={styles.sectionTitleRow}>
+            <MaterialIcons name="medication" size={18} color={COLORS.primary} />
+            <Text style={styles.cardTitle}>Electronic Prescription (Rx)</Text>
+          </View>
           <TouchableOpacity onPress={handleAddMedication} style={styles.addMedBtn}>
-            <Text style={styles.addMedBtnText}>+ Add Medication</Text>
+            <MaterialIcons name="add" size={15} color={COLORS.primaryDark} />
+            <Text style={styles.addMedBtnText}>Add Drug</Text>
           </TouchableOpacity>
         </View>
 
@@ -180,7 +195,7 @@ export default function PostConsultationScreen({ route, navigation }: any) {
                 <TextInput
                   style={styles.input}
                   placeholder="e.g. Amlodipine"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={COLORS.textSubtle}
                   value={med.drugName}
                   onChangeText={(val) => handleMedChange(index, 'drugName', val)}
                 />
@@ -191,7 +206,7 @@ export default function PostConsultationScreen({ route, navigation }: any) {
                 <TextInput
                   style={styles.input}
                   placeholder="5mg"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={COLORS.textSubtle}
                   value={med.dosage}
                   onChangeText={(val) => handleMedChange(index, 'dosage', val)}
                 />
@@ -204,7 +219,7 @@ export default function PostConsultationScreen({ route, navigation }: any) {
                 <TextInput
                   style={styles.input}
                   placeholder="Once daily"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={COLORS.textSubtle}
                   value={med.frequency}
                   onChangeText={(val) => handleMedChange(index, 'frequency', val)}
                 />
@@ -215,7 +230,7 @@ export default function PostConsultationScreen({ route, navigation }: any) {
                 <TextInput
                   style={styles.input}
                   placeholder="30 days"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={COLORS.textSubtle}
                   value={med.duration}
                   onChangeText={(val) => handleMedChange(index, 'duration', val)}
                 />
@@ -226,7 +241,7 @@ export default function PostConsultationScreen({ route, navigation }: any) {
             <TextInput
               style={styles.input}
               placeholder="e.g. Take with breakfast"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={COLORS.textSubtle}
               value={med.instructions || ''}
               onChangeText={(val) => handleMedChange(index, 'instructions', val)}
             />
@@ -238,11 +253,15 @@ export default function PostConsultationScreen({ route, navigation }: any) {
         style={[styles.submitBtn, isSubmitting && styles.btnDisabled]}
         onPress={handleSubmit}
         disabled={isSubmitting}
+        activeOpacity={0.85}
       >
         {isSubmitting ? (
-          <ActivityIndicator color="#ffffff" />
+          <ActivityIndicator color={COLORS.white} />
         ) : (
-          <Text style={styles.submitBtnText}>Complete Session & Sync e-Prescription</Text>
+          <View style={styles.btnInner}>
+            <MaterialIcons name="check-circle-outline" size={18} color={COLORS.white} />
+            <Text style={styles.submitBtnText}>Complete Session & Sync Rx</Text>
+          </View>
         )}
       </TouchableOpacity>
     </ScrollView>
@@ -252,122 +271,136 @@ export default function PostConsultationScreen({ route, navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.bg,
   },
   content: {
-    padding: 16,
-    gap: 14,
+    padding: 18,
+    gap: 16,
+    paddingBottom: 32,
   },
   header: {
-    backgroundColor: '#0f172a',
-    padding: 16,
-    borderRadius: 16,
+    backgroundColor: COLORS.navy,
+    padding: 18,
+    borderRadius: RADIUS.lg,
   },
   patientTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#ffffff',
+    fontSize: 17,
+    fontFamily: FONTS.bold,
+    color: COLORS.white,
   },
   sessionDate: {
     fontSize: 12,
-    color: '#94a3b8',
+    fontFamily: FONTS.medium,
+    color: '#94A3B8',
     marginTop: 2,
   },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
-    padding: 16,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
+    padding: 18,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: COLORS.border,
+    ...SHADOWS.card,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginBottom: 8,
   },
   cardTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0f172a',
-    marginBottom: 10,
+    fontSize: 15,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   rxHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   addMedBtn: {
-    backgroundColor: '#ecfdf5',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.primarySoft,
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    paddingVertical: 6,
+    borderRadius: RADIUS.sm,
     borderWidth: 1,
-    borderColor: '#a7f3d0',
+    borderColor: COLORS.primaryLight,
   },
   addMedBtnText: {
-    color: '#059669',
+    color: COLORS.primaryDark,
     fontSize: 11,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
   },
   label: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#475569',
-    textTransform: 'uppercase',
-    marginBottom: 4,
-    marginTop: 6,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textSecondary,
+    marginBottom: 5,
+    marginTop: 8,
   },
   input: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.bg,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
+    borderColor: COLORS.borderStrong,
+    borderRadius: RADIUS.sm,
     paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingVertical: 10,
     fontSize: 13,
-    color: '#0f172a',
+    fontFamily: FONTS.medium,
+    color: COLORS.text,
   },
   textArea: {
-    height: 65,
+    height: 70,
     textAlignVertical: 'top',
   },
   medBox: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.bg,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    padding: 14,
+    marginTop: 10,
   },
   medBoxHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
   },
   medIndexText: {
     fontSize: 12,
-    fontWeight: '800',
-    color: '#059669',
+    fontFamily: FONTS.bold,
+    color: COLORS.primaryDark,
   },
   removeText: {
-    fontSize: 11,
-    color: '#ef4444',
-    fontWeight: '700',
+    fontSize: 12,
+    fontFamily: FONTS.bold,
+    color: COLORS.danger,
   },
   row: {
     flexDirection: 'row',
   },
   submitBtn: {
-    backgroundColor: '#059669',
-    borderRadius: 14,
-    paddingVertical: 15,
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    height: 52,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 6,
-    marginBottom: 20,
+  },
+  btnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   btnDisabled: {
     opacity: 0.6,
   },
   submitBtnText: {
-    color: '#ffffff',
+    color: COLORS.white,
     fontSize: 14,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
   },
 });

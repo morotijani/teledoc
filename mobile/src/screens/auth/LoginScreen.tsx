@@ -9,12 +9,16 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  SafeAreaView,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
+import { COLORS, FONTS, RADIUS, SHADOWS } from '../../theme/theme';
 
 export default function LoginScreen({ navigation }: any) {
-  const [identifier, setIdentifier] = useState('+233240000004'); // default demo patient
+  const [identifier, setIdentifier] = useState('+233240000004');
   const [password, setPassword] = useState('Password123!');
+  const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const { login, isLoading } = useAuth();
 
@@ -38,282 +42,367 @@ export default function LoginScreen({ navigation }: any) {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header Branding */}
-        <View style={styles.brandHeader}>
-          <View style={styles.logoCircle}>
-            <Text style={styles.logoText}>🩺</Text>
-          </View>
-          <Text style={styles.appTitle}>TeleDoc Ghana</Text>
-          <Text style={styles.appSubtitle}>Accredited Teleconsultations & Digital Healthcare</Text>
-        </View>
-
-        {/* Demo Fast Logins for Easy Evaluation */}
-        <View style={styles.demoCard}>
-          <Text style={styles.demoTitle}>🚀 Quick Test Accounts:</Text>
-          <View style={styles.demoButtonsRow}>
-            <TouchableOpacity
-              style={[styles.demoBadge, identifier.includes('4') && styles.demoBadgeActive]}
-              onPress={() => setDemoUser('+233240000004')}
-            >
-              <Text style={styles.demoBadgeText}>Patient (Kwame)</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.demoBadge, identifier.includes('2') && styles.demoBadgeActive]}
-              onPress={() => setDemoUser('dr.mensah@teledoc.gh')}
-            >
-              <Text style={styles.demoBadgeText}>Dr. Mensah (Active)</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.demoBadge, identifier.includes('3') && styles.demoBadgeActive]}
-              onPress={() => setDemoUser('dr.boateng@teledoc.gh')}
-            >
-              <Text style={styles.demoBadgeText}>Dr. Boateng (Pending)</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {errorMsg ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{errorMsg}</Text>
-          </View>
-        ) : null}
-
-        {/* Form Fields */}
-        <View style={styles.formContainer}>
-          <Text style={styles.label}>Phone Number or Email</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="+233... or user@example.com"
-            placeholderTextColor="#94a3b8"
-            value={identifier}
-            onChangeText={setIdentifier}
-            autoCapitalize="none"
-          />
-
-          <Text style={styles.label}>Password</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="••••••••"
-            placeholderTextColor="#94a3b8"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-
-          <TouchableOpacity
-            style={[styles.loginBtn, isLoading && styles.btnDisabled]}
-            onPress={handleLogin}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.loginBtnText}>Sign In</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Registration Links */}
-        <View style={styles.footerLinks}>
-          <TouchableOpacity
-            style={styles.registerLink}
-            onPress={() => navigation.navigate('RegisterPatient')}
-          >
-            <Text style={styles.registerLinkText}>
-              New Patient? <Text style={styles.linkHighlight}>Sign Up (3 Months Free)</Text>
+    <SafeAreaView style={styles.safeArea}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Brand Header */}
+          <View style={styles.brandHeader}>
+            <View style={styles.logoMark}>
+              <MaterialIcons name="medical-services" size={32} color={COLORS.white} />
+            </View>
+            <Text style={styles.appTitle}>TeleDoc Ghana</Text>
+            <Text style={styles.appSubtitle}>
+              Accredited Teleconsultations & Digital Healthcare
             </Text>
-          </TouchableOpacity>
+          </View>
 
-          <TouchableOpacity
-            style={styles.doctorRegisterLink}
-            onPress={() => navigation.navigate('RegisterDoctor')}
-          >
-            <Text style={styles.doctorRegisterText}>
-              Are you a licensed doctor? <Text style={styles.doctorHighlight}>Apply to Consult</Text>
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          {/* Demo Fast Logins */}
+          <View style={styles.demoCard}>
+            <View style={styles.demoHeaderRow}>
+              <MaterialIcons name="bolt" size={16} color={COLORS.primaryDark} />
+              <Text style={styles.demoTitle}>Quick Demo Accounts</Text>
+            </View>
+            <View style={styles.demoButtonsRow}>
+              {[
+                { label: 'Patient (Kwame)', id: '+233240000004', icon: 'person' as const },
+                { label: 'Dr. Mensah', id: 'dr.mensah@teledoc.gh', icon: 'verified-user' as const },
+                { label: 'Dr. Boateng', id: 'dr.boateng@teledoc.gh', icon: 'hourglass-top' as const },
+              ].map((demo) => {
+                const isActive = identifier === demo.id;
+                return (
+                  <TouchableOpacity
+                    key={demo.id}
+                    style={[styles.demoChip, isActive && styles.demoChipActive]}
+                    onPress={() => setDemoUser(demo.id)}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialIcons
+                      name={demo.icon}
+                      size={14}
+                      color={isActive ? COLORS.white : COLORS.primaryDark}
+                    />
+                    <Text style={[styles.demoChipText, isActive && styles.demoChipTextActive]}>
+                      {demo.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {errorMsg ? (
+            <View style={styles.errorContainer}>
+              <MaterialIcons name="error-outline" size={18} color={COLORS.danger} />
+              <Text style={styles.errorText}>{errorMsg}</Text>
+            </View>
+          ) : null}
+
+          {/* Sign In Card */}
+          <View style={styles.formCard}>
+            <Text style={styles.formHeading}>Sign in to your account</Text>
+
+            <Text style={styles.label}>Phone Number or Email</Text>
+            <View style={styles.inputWrapper}>
+              <MaterialIcons name="alternate-email" size={18} color={COLORS.textSubtle} />
+              <TextInput
+                style={styles.input}
+                placeholder="+233... or user@example.com"
+                placeholderTextColor={COLORS.textSubtle}
+                value={identifier}
+                onChangeText={setIdentifier}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+
+            <Text style={styles.label}>Password</Text>
+            <View style={styles.inputWrapper}>
+              <MaterialIcons name="lock-outline" size={18} color={COLORS.textSubtle} />
+              <TextInput
+                style={styles.input}
+                placeholder="Enter your password"
+                placeholderTextColor={COLORS.textSubtle}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+              />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} hitSlop={8}>
+                <MaterialIcons
+                  name={showPassword ? 'visibility-off' : 'visibility'}
+                  size={18}
+                  color={COLORS.textMuted}
+                />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.loginBtn, isLoading && styles.btnDisabled]}
+              onPress={handleLogin}
+              disabled={isLoading}
+              activeOpacity={0.85}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={COLORS.white} />
+              ) : (
+                <View style={styles.btnInner}>
+                  <Text style={styles.loginBtnText}>Sign In</Text>
+                  <MaterialIcons name="arrow-forward" size={18} color={COLORS.white} />
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Registration Links */}
+          <View style={styles.footerLinks}>
+            <TouchableOpacity
+              style={styles.registerLink}
+              onPress={() => navigation.navigate('RegisterPatient')}
+            >
+              <Text style={styles.registerLinkText}>
+                New patient? <Text style={styles.linkHighlight}>Create account (90 days free)</Text>
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.doctorRegisterCard}
+              onPress={() => navigation.navigate('RegisterDoctor')}
+              activeOpacity={0.8}
+            >
+              <View style={styles.doctorIconBox}>
+                <MaterialIcons name="local-hospital" size={18} color={COLORS.info} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.doctorCardTitle}>Licensed Clinician?</Text>
+                <Text style={styles.doctorCardSub}>Apply with your MDC credentials</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={20} color={COLORS.textSubtle} />
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
   },
   scrollContent: {
-    padding: 24,
+    paddingHorizontal: 22,
+    paddingVertical: 28,
     justifyContent: 'center',
-    minHeight: '100%',
+    flexGrow: 1,
   },
   brandHeader: {
     alignItems: 'center',
     marginBottom: 24,
   },
-  logoCircle: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: '#059669',
+  logoMark: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
-    shadowColor: '#059669',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  logoText: {
-    fontSize: 32,
+    marginBottom: 14,
+    ...SHADOWS.elevated,
   },
   appTitle: {
     fontSize: 26,
-    fontWeight: '900',
-    color: '#0f172a',
-    letterSpacing: -0.5,
+    fontFamily: FONTS.extraBold,
+    color: COLORS.text,
+    letterSpacing: -0.6,
   },
   appSubtitle: {
     fontSize: 13,
-    color: '#64748b',
+    fontFamily: FONTS.medium,
+    color: COLORS.textMuted,
     textAlign: 'center',
     marginTop: 4,
-    fontWeight: '500',
   },
   demoCard: {
-    backgroundColor: '#ecfdf5',
-    borderColor: '#a7f3d0',
+    backgroundColor: COLORS.primarySoft,
+    borderColor: COLORS.primaryLight,
     borderWidth: 1,
-    borderRadius: 16,
-    padding: 12,
-    marginBottom: 20,
+    borderRadius: RADIUS.lg,
+    padding: 14,
+    marginBottom: 18,
+  },
+  demoHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
   },
   demoTitle: {
     fontSize: 11,
-    fontWeight: '800',
-    color: '#047857',
+    fontFamily: FONTS.bold,
+    color: COLORS.primaryDark,
     textTransform: 'uppercase',
-    marginBottom: 8,
+    letterSpacing: 0.6,
   },
   demoButtonsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: 8,
+  },
+  demoChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
-  },
-  demoBadge: {
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
+    borderColor: COLORS.borderStrong,
+    borderRadius: RADIUS.pill,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
   },
-  demoBadgeActive: {
-    backgroundColor: '#059669',
-    borderColor: '#059669',
+  demoChipActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
-  demoBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#0f172a',
+  demoChipText: {
+    fontSize: 12,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textSecondary,
+  },
+  demoChipTextActive: {
+    color: COLORS.white,
   },
   errorContainer: {
-    backgroundColor: '#fef2f2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.dangerSoft,
     borderWidth: 1,
-    borderColor: '#fecaca',
+    borderColor: COLORS.dangerBorder,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     marginBottom: 16,
   },
   errorText: {
-    color: '#b91c1c',
+    flex: 1,
+    color: COLORS.danger,
     fontSize: 13,
-    fontWeight: '600',
+    fontFamily: FONTS.medium,
   },
-  formContainer: {
-    backgroundColor: '#ffffff',
-    padding: 20,
-    borderRadius: 20,
+  formCard: {
+    backgroundColor: COLORS.surface,
+    padding: 22,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
+    borderColor: COLORS.border,
+    ...SHADOWS.card,
+  },
+  formHeading: {
+    fontSize: 18,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
+    marginBottom: 18,
   },
   label: {
     fontSize: 12,
-    fontWeight: '800',
-    color: '#475569',
-    textTransform: 'uppercase',
-    marginBottom: 6,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textSecondary,
+    marginBottom: 8,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: COLORS.bg,
+    borderWidth: 1,
+    borderColor: COLORS.borderStrong,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+    height: 50,
   },
   input: {
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    flex: 1,
     fontSize: 14,
-    color: '#0f172a',
-    marginBottom: 16,
+    fontFamily: FONTS.medium,
+    color: COLORS.text,
   },
   loginBtn: {
-    backgroundColor: '#059669',
-    borderRadius: 12,
-    paddingVertical: 14,
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    height: 52,
+    justifyContent: 'center',
     alignItems: 'center',
     marginTop: 4,
+    ...SHADOWS.card,
   },
   btnDisabled: {
-    opacity: 0.6,
+    opacity: 0.65,
+  },
+  btnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   loginBtnText: {
-    color: '#ffffff',
+    color: COLORS.white,
     fontSize: 15,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
   },
   footerLinks: {
-    marginTop: 24,
-    alignItems: 'center',
-    gap: 12,
+    marginTop: 22,
+    gap: 14,
   },
   registerLink: {
-    paddingVertical: 4,
+    alignItems: 'center',
+    paddingVertical: 6,
   },
   registerLinkText: {
     fontSize: 13,
-    color: '#475569',
-    fontWeight: '600',
+    fontFamily: FONTS.medium,
+    color: COLORS.textMuted,
   },
   linkHighlight: {
-    color: '#059669',
-    fontWeight: '800',
+    color: COLORS.primary,
+    fontFamily: FONTS.bold,
   },
-  doctorRegisterLink: {
-    backgroundColor: '#f1f5f9',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+  doctorRegisterCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.lg,
+    padding: 14,
+    ...SHADOWS.card,
+  },
+  doctorIconBox: {
+    width: 38,
+    height: 38,
     borderRadius: 12,
+    backgroundColor: COLORS.infoSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  doctorRegisterText: {
+  doctorCardTitle: {
+    fontSize: 13,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
+  },
+  doctorCardSub: {
     fontSize: 12,
-    color: '#475569',
-    fontWeight: '600',
-  },
-  doctorHighlight: {
-    color: '#0284c7',
-    fontWeight: '800',
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
+    marginTop: 1,
   },
 });

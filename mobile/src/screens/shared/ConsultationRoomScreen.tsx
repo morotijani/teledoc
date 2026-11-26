@@ -9,25 +9,50 @@ import {
   ActivityIndicator,
   Modal,
   SafeAreaView,
-  Alert,
+  Image,
+  Linking,
 } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import { MaterialIcons } from '@expo/vector-icons';
 import io, { Socket } from 'socket.io-client';
 import { apiClient, API_URL } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
+import { useAlert } from '../../context/AlertContext';
+import { useDocumentViewer } from '../../context/DocumentViewerContext';
+import { COLORS, FONTS, RADIUS } from '../../theme/theme';
+
+const formatTime = (iso?: string | null) => {
+  if (!iso) return '';
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+const isImageUrl = (url: string) => /\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(url);
+
+const resolveFileUrl = (rawUrl: string) => {
+  const baseServer = API_URL.replace('/api/v1', '');
+  return rawUrl.replace(/http:\/\/localhost:\d+/, baseServer);
+};
 
 export default function ConsultationRoomScreen({ route, navigation }: any) {
   const { appointmentId, doctorName, patientName, isDoctor } = route.params;
   const { user, token } = useAuth();
+  const { showAlert } = useAlert();
+  const { openDocument } = useDocumentViewer();
 
   const [agoraSession, setAgoraSession] = useState<any>(null);
   const [isConnecting, setIsConnecting] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
 
-  // In-Call Socket.io Chat State
   const [chatVisible, setChatVisible] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
   const [inputMessage, setInputMessage] = useState('');
+  const [pendingAttachment, setPendingAttachment] = useState<{
+    uri: string;
+    name: string;
+    mimeType: string;
+  } | null>(null);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
   const otherParticipantName = isDoctor
@@ -36,7 +61,6 @@ export default function ConsultationRoomScreen({ route, navigation }: any) {
 
   useEffect(() => {
     initializeConsultation();
-
     return () => {
       if (socketRef.current) {
         socketRef.current.disconnect();
@@ -44,9 +68,14 @@ export default function ConsultationRoomScreen({ route, navigation }: any) {
     };
   }, []);
 
+  useEffect(() => {
+    if (chatVisible && socketRef.current) {
+      socketRef.current.emit('mark_messages_read', { appointmentId });
+    }
+  }, [chatVisible]);
+
   const initializeConsultation = async () => {
     try {
-      // 1. Fetch Agora Dynamic Token & Historical Chat Messages in parallel
       const [res, msgsRes] = await Promise.all([
         apiClient.post(`/consultations/${appointmentId}/agora-token`),
         apiClient.get(`/consultations/${appointmentId}/messages`).catch(() => ({ data: { messages: [] } })),
@@ -56,7 +85,6 @@ export default function ConsultationRoomScreen({ route, navigation }: any) {
         setMessages(msgsRes.data.messages);
       }
 
-      // 2. Initialize Socket.io Chat Connection
       const socketServerUrl = API_URL.replace('/api/v1', '');
       const socket = io(socketServerUrl, {
         auth: { token },
@@ -64,7 +92,6 @@ export default function ConsultationRoomScreen({ route, navigation }: any) {
       });
 
       socket.on('connect', () => {
-        console.log('[Socket] Connected to consultation server');
         socket.emit('join_consultation', { appointmentId });
       });
 
@@ -73,47 +100,124 @@ export default function ConsultationRoomScreen({ route, navigation }: any) {
           if (prev.some((m) => m.id === msg.id)) return prev;
           return [...prev, msg];
         });
+        if (msg.senderId !== user?.id) {
+          socket.emit('mark_messages_read', { appointmentId });
+        }
+      });
+
+      socket.on('messages_read', ({ readerId, readAt }: { readerId: string; readAt: string }) => {
+        if (readerId !== user?.id) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.senderId === user?.id && !m.readAt ? { ...m, readAt } : m
+            )
+          );
+        }
       });
 
       socketRef.current = socket;
     } catch (err: any) {
       console.error('Failed to initialize teleconsultation session:', err);
-      Alert.alert('Session Error', err.response?.data?.message || 'Could not connect to video consultation.');
+      showAlert({
+        type: 'error',
+        title: 'Session Error',
+        message: err.response?.data?.message || 'Could not connect to video consultation.',
+      });
     } finally {
       setIsConnecting(false);
     }
   };
 
-  const handleSendMessage = () => {
-    if (!inputMessage.trim() || !socketRef.current) return;
+  const handlePickAttachment = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['image/*', 'application/pdf'],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        setPendingAttachment({
+          uri: asset.uri,
+          name: asset.name || 'attachment.pdf',
+          mimeType: asset.mimeType || 'application/octet-stream',
+        });
+      }
+    } catch {
+      showAlert({
+        type: 'error',
+        title: 'Attachment Error',
+        message: 'Could not open file picker.',
+      });
+    }
+  };
+
+  const handleSendMessage = async () => {
+    if ((!inputMessage.trim() && !pendingAttachment) || !socketRef.current) return;
+
+    let uploadedUrl: string | undefined;
+    if (pendingAttachment) {
+      setIsUploadingFile(true);
+      try {
+        const formData = new FormData();
+        formData.append('file', {
+          uri: pendingAttachment.uri,
+          name: pendingAttachment.name,
+          type: pendingAttachment.mimeType,
+        } as any);
+        const uploadRes = await apiClient.post(
+          `/consultations/${appointmentId}/attachments`,
+          formData,
+          { headers: { 'Content-Type': 'multipart/form-data' } }
+        );
+        uploadedUrl = uploadRes.data.attachmentUrl;
+      } catch (err: any) {
+        showAlert({
+          type: 'error',
+          title: 'Upload Failed',
+          message: err.response?.data?.message || 'Could not upload file.',
+        });
+        setIsUploadingFile(false);
+        return;
+      } finally {
+        setIsUploadingFile(false);
+      }
+    }
 
     socketRef.current.emit('send_message', {
       appointmentId,
-      message: inputMessage.trim(),
+      message: inputMessage.trim() || (pendingAttachment ? `Attachment: ${pendingAttachment.name}` : ''),
+      attachmentUrl: uploadedUrl,
     });
 
     setInputMessage('');
+    setPendingAttachment(null);
   };
 
   const handleEndCall = () => {
-    Alert.alert('End Consultation', 'Are you sure you want to exit the consultation call?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'End Call',
-        style: 'destructive',
-        onPress: () => {
-          if (socketRef.current) socketRef.current.disconnect();
-          navigation.goBack();
+    showAlert({
+      type: 'confirm',
+      title: 'End Consultation',
+      message: 'Are you sure you want to leave the consultation room?',
+      actions: [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'End Call',
+          style: 'destructive',
+          onPress: () => {
+            if (socketRef.current) socketRef.current.disconnect();
+            navigation.goBack();
+          },
         },
-      },
-    ]);
+      ],
+    });
   };
 
   if (isConnecting) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#059669" />
-        <Text style={styles.connectingText}>Establishing Encrypted WebRTC Session...</Text>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.connectingText}>Establishing Encrypted Video Session...</Text>
         <Text style={styles.connectingSubtext}>Channel: {agoraSession?.channelId || 'tele_room'}</Text>
       </View>
     );
@@ -121,73 +225,86 @@ export default function ConsultationRoomScreen({ route, navigation }: any) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Top Header */}
+      {/* Top Bar */}
       <View style={styles.topBar}>
         <View style={styles.liveIndicator}>
           <View style={styles.liveDot} />
-          <Text style={styles.liveText}>LIVE HD ENCRYPTED</Text>
+          <Text style={styles.liveText}>LIVE ENCRYPTED</Text>
         </View>
 
         <TouchableOpacity style={styles.chatToggleBtn} onPress={() => setChatVisible(true)}>
-          <Text style={styles.chatToggleText}>💬 Chat ({messages.length})</Text>
+          <MaterialIcons name="chat-bubble-outline" size={16} color={COLORS.white} />
+          <Text style={styles.chatToggleText}>Chat ({messages.length})</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Main Video View Canvas (Remote Video Participant) */}
+      {/* Main Video Canvas */}
       <View style={styles.videoCanvas}>
         <View style={styles.avatarBig}>
           <Text style={styles.avatarBigText}>{otherParticipantName.charAt(0)}</Text>
         </View>
         <Text style={styles.participantName}>{otherParticipantName}</Text>
         <Text style={styles.channelBadge}>
-          Agora Channel: {agoraSession?.channelId || 'active_stream'}
+          Channel: {agoraSession?.channelId || 'active_stream'}
         </Text>
 
-        {/* Self Camera Picture-in-Picture Preview */}
+        {/* Self Preview PiP */}
         <View style={styles.pipContainer}>
           <View style={styles.pipAvatar}>
             <Text style={styles.pipText}>{user?.fullName.charAt(0)}</Text>
           </View>
-          <Text style={styles.pipLabel}>You ({isVideoEnabled ? 'Cam On' : 'Cam Off'})</Text>
+          <Text style={styles.pipLabel}>{isVideoEnabled ? 'Cam On' : 'Cam Off'}</Text>
         </View>
       </View>
 
-      {/* In-Call Controls Bottom Bar */}
+      {/* Bottom Controls */}
       <View style={styles.controlBar}>
         <TouchableOpacity
           style={[styles.controlBtn, isMuted && styles.controlBtnActive]}
           onPress={() => setIsMuted(!isMuted)}
         >
-          <Text style={styles.controlIcon}>{isMuted ? '🔇' : '🎙️'}</Text>
+          <View style={[styles.controlCircle, isMuted && styles.controlCircleMuted]}>
+            <MaterialIcons name={isMuted ? 'mic-off' : 'mic'} size={22} color={COLORS.white} />
+          </View>
           <Text style={styles.controlLabel}>{isMuted ? 'Unmute' : 'Mute'}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.controlBtn, !isVideoEnabled && styles.controlBtnActive]}
+          style={styles.controlBtn}
           onPress={() => setIsVideoEnabled(!isVideoEnabled)}
         >
-          <Text style={styles.controlIcon}>{isVideoEnabled ? '📹' : '🚫'}</Text>
-          <Text style={styles.controlLabel}>{isVideoEnabled ? 'Stop Cam' : 'Start Cam'}</Text>
+          <View style={[styles.controlCircle, !isVideoEnabled && styles.controlCircleMuted]}>
+            <MaterialIcons
+              name={isVideoEnabled ? 'videocam' : 'videocam-off'}
+              size={22}
+              color={COLORS.white}
+            />
+          </View>
+          <Text style={styles.controlLabel}>{isVideoEnabled ? 'Camera' : 'Off'}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.controlBtn} onPress={() => setChatVisible(true)}>
-          <Text style={styles.controlIcon}>💬</Text>
-          <Text style={styles.controlLabel}>In-Call Chat</Text>
+          <View style={styles.controlCircle}>
+            <MaterialIcons name="chat" size={21} color={COLORS.white} />
+          </View>
+          <Text style={styles.controlLabel}>Chat</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.endCallBtn} onPress={handleEndCall}>
-          <Text style={styles.endCallIcon}>📞</Text>
-          <Text style={styles.endCallLabel}>Leave</Text>
+        <TouchableOpacity style={styles.controlBtn} onPress={handleEndCall}>
+          <View style={styles.endCallCircle}>
+            <MaterialIcons name="call-end" size={22} color={COLORS.white} />
+          </View>
+          <Text style={[styles.controlLabel, { color: '#FCA5A5' }]}>Leave</Text>
         </TouchableOpacity>
       </View>
 
-      {/* In-Platform Chat Modal */}
+      {/* In-Call Chat Modal */}
       <Modal visible={chatVisible} animationType="slide">
         <SafeAreaView style={styles.chatModalContainer}>
           <View style={styles.chatHeader}>
-            <Text style={styles.chatHeaderTitle}>In-Consultation Chat</Text>
+            <Text style={styles.chatHeaderTitle}>Consultation Chat</Text>
             <TouchableOpacity onPress={() => setChatVisible(false)} style={styles.chatCloseBtn}>
-              <Text style={styles.chatCloseText}>Close ✕</Text>
+              <MaterialIcons name="close" size={22} color={COLORS.textMuted} />
             </TouchableOpacity>
           </View>
 
@@ -197,37 +314,119 @@ export default function ConsultationRoomScreen({ route, navigation }: any) {
             contentContainerStyle={styles.chatList}
             renderItem={({ item }) => {
               const isMe = item.senderId === user?.id;
+              const attachmentUrl = item.attachmentUrl ? resolveFileUrl(item.attachmentUrl) : null;
+              const isImage = attachmentUrl ? isImageUrl(attachmentUrl) : false;
+
               return (
                 <View style={[styles.bubbleWrapper, isMe ? styles.bubbleRight : styles.bubbleLeft]}>
-                  <Text style={styles.senderName}>{item.sender?.fullName || (isMe ? 'You' : otherParticipantName)}</Text>
+                  <Text style={styles.senderName}>
+                    {item.sender?.fullName || (isMe ? 'You' : otherParticipantName)}
+                  </Text>
                   <View style={[styles.messageBubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
+                    {attachmentUrl && isImage ? (
+                      <TouchableOpacity
+                        onPress={() => {
+                          setChatVisible(false);
+                          openDocument(attachmentUrl, 'Chat Image');
+                        }}
+                      >
+                        <Image
+                          source={{ uri: attachmentUrl }}
+                          style={styles.attachmentImage}
+                          resizeMode="cover"
+                        />
+                      </TouchableOpacity>
+                    ) : attachmentUrl ? (
+                      <TouchableOpacity
+                        style={styles.attachmentLink}
+                        onPress={() => {
+                          setChatVisible(false);
+                          openDocument(attachmentUrl, 'Chat Attachment');
+                        }}
+                      >
+                        <MaterialIcons
+                          name="description"
+                          size={16}
+                          color={isMe ? COLORS.white : COLORS.primary}
+                        />
+                        <Text
+                          style={[styles.attachmentText, isMe ? styles.textMe : styles.textThem]}
+                          numberOfLines={1}
+                        >
+                          View Attachment
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
+
                     <Text style={[styles.messageText, isMe ? styles.textMe : styles.textThem]}>
                       {item.message}
                     </Text>
+
+                    <View style={styles.receiptRow}>
+                      {isMe ? (
+                        <>
+                          <Text style={styles.receiptTextMe}>
+                            Sent {formatTime(item.createdAt)}
+                            {item.readAt ? ` · Seen ${formatTime(item.readAt)}` : ''}
+                          </Text>
+                          <MaterialIcons
+                            name={item.readAt ? 'done-all' : 'done'}
+                            size={13}
+                            color={item.readAt ? '#99F6E4' : 'rgba(255,255,255,0.72)'}
+                          />
+                        </>
+                      ) : (
+                        <Text style={styles.receiptTextThem}>{formatTime(item.createdAt)}</Text>
+                      )}
+                    </View>
                   </View>
                 </View>
               );
             }}
             ListEmptyComponent={
               <View style={styles.emptyChat}>
+                <MaterialIcons name="forum" size={32} color={COLORS.textSubtle} />
                 <Text style={styles.emptyChatText}>
-                  Send text messages, symptom clarifications, or notes to {otherParticipantName} during the call.
+                  Send messages or attach lab files for {otherParticipantName}.
                 </Text>
               </View>
             }
           />
 
+          {pendingAttachment && (
+            <View style={styles.pendingBar}>
+              <MaterialIcons name="attach-file" size={16} color={COLORS.primary} />
+              <Text style={styles.pendingName} numberOfLines={1}>
+                {pendingAttachment.name}
+              </Text>
+              <TouchableOpacity onPress={() => setPendingAttachment(null)}>
+                <MaterialIcons name="close" size={16} color={COLORS.textMuted} />
+              </TouchableOpacity>
+            </View>
+          )}
+
           <View style={styles.chatInputRow}>
+            <TouchableOpacity style={styles.attachBtn} onPress={handlePickAttachment}>
+              <MaterialIcons name="attach-file" size={20} color={COLORS.textSecondary} />
+            </TouchableOpacity>
             <TextInput
               style={styles.chatInput}
-              placeholder="Type message..."
-              placeholderTextColor="#94a3b8"
+              placeholder="Type a message..."
+              placeholderTextColor={COLORS.textSubtle}
               value={inputMessage}
               onChangeText={setInputMessage}
               onSubmitEditing={handleSendMessage}
             />
-            <TouchableOpacity style={styles.sendBtn} onPress={handleSendMessage}>
-              <Text style={styles.sendBtnText}>Send</Text>
+            <TouchableOpacity
+              style={styles.sendBtn}
+              onPress={handleSendMessage}
+              disabled={isUploadingFile}
+            >
+              {isUploadingFile ? (
+                <ActivityIndicator size="small" color={COLORS.white} />
+              ) : (
+                <MaterialIcons name="send" size={18} color={COLORS.white} />
+              )}
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -239,68 +438,73 @@ export default function ConsultationRoomScreen({ route, navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: COLORS.navy,
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: COLORS.navy,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
   connectingText: {
-    color: '#ffffff',
+    color: COLORS.white,
     fontSize: 16,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
     marginTop: 16,
   },
   connectingSubtext: {
-    color: '#38bdf8',
+    color: '#38BDF8',
     fontSize: 12,
+    fontFamily: FONTS.medium,
     marginTop: 4,
   },
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     paddingVertical: 12,
   },
   liveIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    backgroundColor: COLORS.navyLight,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: RADIUS.pill,
     gap: 6,
   },
   liveDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#10b981',
+    backgroundColor: '#10B981',
   },
   liveText: {
-    color: '#34d399',
+    color: '#34D399',
     fontSize: 10,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
+    letterSpacing: 0.6,
   },
   chatToggleBtn: {
-    backgroundColor: '#1e293b',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.navyLight,
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
+    paddingVertical: 7,
+    borderRadius: RADIUS.pill,
   },
   chatToggleText: {
-    color: '#ffffff',
+    color: COLORS.white,
     fontSize: 12,
-    fontWeight: '700',
+    fontFamily: FONTS.semiBold,
   },
   videoCanvas: {
     flex: 1,
-    backgroundColor: '#1e293b',
-    margin: 12,
+    backgroundColor: COLORS.navyLight,
+    margin: 14,
     borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
@@ -310,39 +514,40 @@ const styles = StyleSheet.create({
   avatarBig: {
     width: 96,
     height: 96,
-    borderRadius: 48,
-    backgroundColor: '#334155',
+    borderRadius: 32,
+    backgroundColor: COLORS.navyMuted,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
     borderWidth: 2,
-    borderColor: '#38bdf8',
+    borderColor: '#38BDF8',
   },
   avatarBigText: {
     fontSize: 38,
-    fontWeight: '900',
-    color: '#38bdf8',
+    fontFamily: FONTS.extraBold,
+    color: '#38BDF8',
   },
   participantName: {
     fontSize: 20,
-    fontWeight: '900',
-    color: '#ffffff',
+    fontFamily: FONTS.bold,
+    color: COLORS.white,
   },
   channelBadge: {
     fontSize: 11,
-    color: '#94a3b8',
+    fontFamily: FONTS.medium,
+    color: '#94A3B8',
     marginTop: 4,
   },
   pipContainer: {
     position: 'absolute',
     top: 16,
     right: 16,
-    width: 90,
-    height: 120,
-    backgroundColor: '#0f172a',
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: '#475569',
+    width: 86,
+    height: 112,
+    backgroundColor: COLORS.navy,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: COLORS.navyMuted,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 4,
@@ -350,92 +555,88 @@ const styles = StyleSheet.create({
   pipAvatar: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: '#059669',
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
   },
   pipText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#ffffff',
+    fontSize: 15,
+    fontFamily: FONTS.bold,
+    color: COLORS.white,
   },
   pipLabel: {
-    fontSize: 9,
-    color: '#94a3b8',
-    marginTop: 4,
-    fontWeight: '600',
+    fontSize: 10,
+    fontFamily: FONTS.medium,
+    color: '#94A3B8',
+    marginTop: 6,
   },
   controlBar: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 18,
-    backgroundColor: '#0f172a',
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    backgroundColor: COLORS.navy,
   },
   controlBtn: {
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
   },
   controlBtnActive: {
-    opacity: 0.5,
+    opacity: 0.9,
   },
-  controlIcon: {
-    fontSize: 24,
+  controlCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: COLORS.navyLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  controlCircleMuted: {
+    backgroundColor: COLORS.navyMuted,
+  },
+  endCallCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: COLORS.danger,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   controlLabel: {
-    color: '#94a3b8',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  endCallBtn: {
-    backgroundColor: '#ef4444',
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-    borderRadius: 14,
-    alignItems: 'center',
-    gap: 2,
-  },
-  endCallIcon: {
-    fontSize: 20,
-  },
-  endCallLabel: {
-    color: '#ffffff',
-    fontSize: 10,
-    fontWeight: '800',
+    color: '#94A3B8',
+    fontSize: 11,
+    fontFamily: FONTS.semiBold,
   },
   chatModalContainer: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.surface,
   },
   chatHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    borderBottomColor: COLORS.border,
   },
   chatHeaderTitle: {
     fontSize: 16,
-    fontWeight: '800',
-    color: '#0f172a',
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   chatCloseBtn: {
-    padding: 6,
-  },
-  chatCloseText: {
-    color: '#64748b',
-    fontSize: 13,
-    fontWeight: '700',
+    padding: 4,
   },
   chatList: {
     padding: 16,
     gap: 12,
   },
   bubbleWrapper: {
-    maxWidth: '80%',
+    maxWidth: '82%',
     marginBottom: 8,
   },
   bubbleLeft: {
@@ -446,9 +647,9 @@ const styles = StyleSheet.create({
   },
   senderName: {
     fontSize: 10,
-    color: '#94a3b8',
-    marginBottom: 2,
-    fontWeight: '600',
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textSubtle,
+    marginBottom: 3,
   },
   messageBubble: {
     paddingHorizontal: 14,
@@ -456,60 +657,116 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   bubbleMe: {
-    backgroundColor: '#059669',
+    backgroundColor: COLORS.primary,
   },
   bubbleThem: {
-    backgroundColor: '#f1f5f9',
+    backgroundColor: COLORS.surfaceMuted,
+  },
+  attachmentImage: {
+    width: 190,
+    height: 140,
+    borderRadius: 10,
+    marginBottom: 6,
+  },
+  attachmentLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  attachmentText: {
+    fontSize: 12,
+    fontFamily: FONTS.semiBold,
+    textDecorationLine: 'underline',
   },
   messageText: {
     fontSize: 13,
-    lineHeight: 18,
+    fontFamily: FONTS.regular,
+    lineHeight: 19,
   },
   textMe: {
-    color: '#ffffff',
+    color: COLORS.white,
   },
   textThem: {
-    color: '#1e293b',
+    color: COLORS.text,
+  },
+  receiptRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 4,
+    marginTop: 4,
+  },
+  receiptTextMe: {
+    fontSize: 10,
+    fontFamily: FONTS.medium,
+    color: 'rgba(255, 255, 255, 0.82)',
+  },
+  receiptTextThem: {
+    fontSize: 10,
+    fontFamily: FONTS.medium,
+    color: COLORS.textSubtle,
   },
   emptyChat: {
     padding: 40,
     alignItems: 'center',
+    gap: 10,
   },
   emptyChatText: {
-    color: '#94a3b8',
+    color: COLORS.textMuted,
     fontSize: 12,
+    fontFamily: FONTS.regular,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  pendingBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: COLORS.primarySoft,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.primaryLight,
+  },
+  pendingName: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.primaryDark,
   },
   chatInputRow: {
     flexDirection: 'row',
     padding: 12,
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
-    backgroundColor: '#ffffff',
+    borderTopColor: COLORS.border,
+    backgroundColor: COLORS.surface,
     gap: 8,
   },
-  chatInput: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 13,
-    color: '#0f172a',
-  },
-  sendBtn: {
-    backgroundColor: '#059669',
-    borderRadius: 12,
-    paddingHorizontal: 16,
+  attachBtn: {
+    width: 42,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surfaceMuted,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  sendBtnText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '800',
+  chatInput: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
+    borderWidth: 1,
+    borderColor: COLORS.borderStrong,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    fontFamily: FONTS.regular,
+    color: COLORS.text,
+  },
+  sendBtn: {
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    width: 46,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

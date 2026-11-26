@@ -7,13 +7,16 @@ import {
   ActivityIndicator,
   ScrollView,
   TextInput,
-  Alert,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { apiClient } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
+import { useAlert } from '../../context/AlertContext';
+import { COLORS, FONTS, RADIUS, SHADOWS } from '../../theme/theme';
 
 export default function SubscriptionPaywallScreen() {
   const { user, subscription, refreshProfile } = useAuth();
+  const { showAlert } = useAlert();
   const [subData, setSubData] = useState<any>(null);
   const [phone, setPhone] = useState(user?.phoneNumber || '');
   const [selectedChannel, setSelectedChannel] = useState<'mtn-gh' | 'vodafone-gh' | 'tigo-gh' | 'card'>('mtn-gh');
@@ -34,7 +37,11 @@ export default function SubscriptionPaywallScreen() {
 
   const handlePaySubscription = async () => {
     if (!phone.trim()) {
-      Alert.alert('Phone Required', 'Please enter your Mobile Money phone number.');
+      showAlert({
+        type: 'warning',
+        title: 'Phone Required',
+        message: 'Please enter your Mobile Money phone number.',
+      });
       return;
     }
 
@@ -47,10 +54,11 @@ export default function SubscriptionPaywallScreen() {
 
       const clientReference = res.data.clientReference;
 
-      Alert.alert(
-        '📲 MoMo USSD Prompt Sent',
-        `A 10.00 GHS Mobile Money debit prompt has been sent to ${phone}. Authorize the prompt on your handset, then tap "Confirm Payment" below.`,
-        [
+      showAlert({
+        type: 'info',
+        title: 'Mobile Money Prompt Sent',
+        message: `A GHS 10.00 debit prompt has been sent to ${phone}. Authorize the prompt on your handset, then tap "Confirm Payment" below.`,
+        actions: [
           {
             text: 'Cancel',
             style: 'cancel',
@@ -58,6 +66,7 @@ export default function SubscriptionPaywallScreen() {
           },
           {
             text: 'Confirm Payment',
+            style: 'primary',
             onPress: async () => {
               try {
                 const verifyRes = await apiClient.get(
@@ -66,129 +75,163 @@ export default function SubscriptionPaywallScreen() {
                 if (verifyRes.data.status === 'SUCCESS' || verifyRes.data.status === 'PAID') {
                   await refreshProfile();
                   await fetchStatus();
-                  Alert.alert(
-                    '🎉 Subscription Active!',
-                    'Your 10 GHS monthly TeleDoc subscription has been activated via Mobile Money. You have unlimited teleconsultation booking access.'
-                  );
+                  showAlert({
+                    type: 'success',
+                    title: 'Subscription Active',
+                    message:
+                      'Your GHS 10 monthly TeleDoc subscription has been activated via Mobile Money.',
+                  });
                 } else {
-                  Alert.alert('Payment Pending', 'Your transaction is still awaiting confirmation.');
+                  showAlert({
+                    type: 'info',
+                    title: 'Payment Pending',
+                    message: 'Your transaction is still awaiting confirmation.',
+                  });
                 }
-              } catch (vErr: any) {
-                Alert.alert('Verification Error', 'Could not verify Mobile Money payment.');
+              } catch {
+                showAlert({
+                  type: 'error',
+                  title: 'Verification Error',
+                  message: 'Could not verify Mobile Money payment.',
+                });
               } finally {
                 setIsProcessing(false);
               }
             },
           },
-        ]
-      );
+        ],
+      });
     } catch (err: any) {
       setIsProcessing(false);
-      Alert.alert('Payment Error', err.response?.data?.message || 'Could not initiate payment.');
+      showAlert({
+        type: 'error',
+        title: 'Payment Error',
+        message: err.response?.data?.message || 'Could not initiate payment.',
+      });
     }
   };
 
   const isTrial = (subData?.status || subscription?.status) === 'TRIAL';
   const daysLeft = subData?.daysRemainingInTrial ?? subscription?.trialDaysRemaining ?? 90;
 
+  const channels = [
+    { id: 'mtn-gh', label: 'MTN MoMo', accent: '#EAB308', icon: 'smartphone' as const },
+    { id: 'vodafone-gh', label: 'Telecel Cash', accent: '#DC2626', icon: 'smartphone' as const },
+    { id: 'tigo-gh', label: 'AT Money', accent: '#0284C7', icon: 'smartphone' as const },
+    { id: 'card', label: 'Visa / Card', accent: '#0F172A', icon: 'credit-card' as const },
+  ];
+
+  const perks = [
+    'Unlimited HD Video & Audio Consultations',
+    'Direct in-platform chat with MDC doctors',
+    'Instant e-Prescriptions synced to your phone',
+    'Lab results & diagnostic imaging uploads',
+    'Instant SMS & push appointment reminders',
+  ];
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Tier Badge Banner */}
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+    >
+      {/* Status Banner */}
       <View style={styles.tierBanner}>
         <View style={styles.badgeCircle}>
-          <Text style={styles.badgeIcon}>🛡️</Text>
+          <MaterialIcons name="verified-user" size={26} color={COLORS.primary} />
         </View>
         <Text style={styles.tierTitle}>
-          {isTrial ? '3-Month Free Trial Tier' : 'Active 10 GHS Monthly Tier'}
+          {isTrial ? '90-Day Free Trial Active' : 'Monthly Unlimited Plan'}
         </Text>
         <Text style={styles.tierSubtitle}>
           {isTrial
-            ? `Your initial 90-day free trial is running. You have ${daysLeft} days remaining.`
+            ? `You have ${daysLeft} days remaining in your complimentary 3-month trial.`
             : 'Your subscription is active and renews monthly via Mobile Money.'}
         </Text>
       </View>
 
       {/* Pricing Card */}
-      <View style={styles.pricingCard}>
+      <View style={styles.card}>
         <View style={styles.priceRow}>
           <Text style={styles.priceCurrency}>GHS</Text>
           <Text style={styles.priceAmount}>10</Text>
           <Text style={styles.priceFrequency}>/ month</Text>
         </View>
         <Text style={styles.priceDesc}>
-          Access Ghana's top licensed doctors from any phone across all 16 regions.
+          Full access to accredited Ghanaian physicians across all 16 regions.
         </Text>
 
         <View style={styles.perksList}>
-          <Text style={styles.perkItem}>✓ Unlimited Video & Audio Consultations</Text>
-          <Text style={styles.perkItem}>✓ Direct in-platform Chat with Doctors</Text>
-          <Text style={styles.perkItem}>✓ Instant Digital Prescriptions synced to phone</Text>
-          <Text style={styles.perkItem}>✓ Lab Results & Imaging uploads</Text>
-          <Text style={styles.perkItem}>✓ Instant SMS & Push Appointment Reminders</Text>
+          {perks.map((perk) => (
+            <View key={perk} style={styles.perkRow}>
+              <MaterialIcons name="check-circle" size={16} color={COLORS.primary} />
+              <Text style={styles.perkItem}>{perk}</Text>
+            </View>
+          ))}
         </View>
       </View>
 
-      {/* Payment Channels Selector */}
-      <View style={styles.paymentSection}>
-        <Text style={styles.sectionTitle}>Select Local Payment Method (Hubtel)</Text>
+      {/* Payment Channels */}
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Payment Method (Hubtel Ghana)</Text>
 
         <View style={styles.channelsGrid}>
-          {[
-            { id: 'mtn-gh', label: 'MTN MoMo', icon: '🟡' },
-            { id: 'vodafone-gh', label: 'Telecel Cash', icon: '🔴' },
-            { id: 'tigo-gh', label: 'AT Money', icon: '🔵' },
-            { id: 'card', label: 'Visa / Card', icon: '💳' },
-          ].map((ch) => (
-            <TouchableOpacity
-              key={ch.id}
-              style={[
-                styles.channelCard,
-                selectedChannel === ch.id && styles.channelCardSelected,
-              ]}
-              onPress={() => setSelectedChannel(ch.id as any)}
-            >
-              <Text style={styles.channelIcon}>{ch.icon}</Text>
-              <Text
-                style={[
-                  styles.channelLabel,
-                  selectedChannel === ch.id && styles.channelLabelSelected,
-                ]}
+          {channels.map((ch) => {
+            const isSelected = selectedChannel === ch.id;
+            return (
+              <TouchableOpacity
+                key={ch.id}
+                style={[styles.channelCard, isSelected && styles.channelCardSelected]}
+                onPress={() => setSelectedChannel(ch.id as any)}
+                activeOpacity={0.8}
               >
-                {ch.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <View style={[styles.channelDot, { backgroundColor: ch.accent }]}>
+                  <MaterialIcons name={ch.icon} size={16} color={COLORS.white} />
+                </View>
+                <Text style={[styles.channelLabel, isSelected && styles.channelLabelSelected]}>
+                  {ch.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        <Text style={styles.inputLabel}>Mobile Money Phone Number</Text>
-        <TextInput
-          style={styles.phoneInput}
-          placeholder="+233 24 000 0000"
-          placeholderTextColor="#94a3b8"
-          value={phone}
-          onChangeText={setPhone}
-          keyboardType="phone-pad"
-        />
+        <Text style={styles.inputLabel}>Mobile Money Number</Text>
+        <View style={styles.inputWrap}>
+          <MaterialIcons name="phone-android" size={18} color={COLORS.textSubtle} />
+          <TextInput
+            style={styles.phoneInput}
+            placeholder="+233 24 000 0000"
+            placeholderTextColor={COLORS.textSubtle}
+            value={phone}
+            onChangeText={setPhone}
+            keyboardType="phone-pad"
+          />
+        </View>
 
         <TouchableOpacity
           style={[styles.payBtn, isProcessing && styles.btnDisabled]}
           onPress={handlePaySubscription}
           disabled={isProcessing}
+          activeOpacity={0.85}
         >
           {isProcessing ? (
-            <ActivityIndicator color="#ffffff" />
+            <ActivityIndicator color={COLORS.white} />
           ) : (
             <Text style={styles.payBtnText}>
               {isTrial && daysLeft > 0
-                ? 'Pre-pay Next Month (10 GHS)'
-                : 'Subscribe Now (10 GHS / MoMo)'}
+                ? 'Pre-pay Next Month (GHS 10)'
+                : 'Subscribe Now (GHS 10 / MoMo)'}
             </Text>
           )}
         </TouchableOpacity>
 
-        <Text style={styles.secureNote}>
-          🔒 Secured by Hubtel Ghana PCI-DSS Certified Payment Gateway. Recurring billing can be cancelled anytime with zero penalty.
-        </Text>
+        <View style={styles.secureRow}>
+          <MaterialIcons name="lock" size={13} color={COLORS.textSubtle} />
+          <Text style={styles.secureNote}>
+            Secured by Hubtel Ghana PCI-DSS Certified Gateway. Cancel anytime.
+          </Text>
+        </View>
       </View>
     </ScrollView>
   );
@@ -197,50 +240,51 @@ export default function SubscriptionPaywallScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.bg,
   },
   content: {
-    padding: 20,
+    padding: 18,
     gap: 16,
+    paddingBottom: 32,
   },
   tierBanner: {
-    backgroundColor: '#ecfdf5',
+    backgroundColor: COLORS.primarySoft,
     borderWidth: 1,
-    borderColor: '#a7f3d0',
-    borderRadius: 20,
+    borderColor: COLORS.primaryLight,
+    borderRadius: RADIUS.xl,
     padding: 20,
     alignItems: 'center',
   },
   badgeCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#ffffff',
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: COLORS.surface,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
-  },
-  badgeIcon: {
-    fontSize: 26,
+    marginBottom: 10,
+    ...SHADOWS.card,
   },
   tierTitle: {
     fontSize: 18,
-    fontWeight: '900',
-    color: '#065f46',
+    fontFamily: FONTS.extraBold,
+    color: COLORS.primaryDark,
   },
   tierSubtitle: {
     fontSize: 12,
-    color: '#047857',
+    fontFamily: FONTS.medium,
+    color: COLORS.textSecondary,
     textAlign: 'center',
     marginTop: 4,
     lineHeight: 18,
   },
-  pricingCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
+  card: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: COLORS.border,
+    ...SHADOWS.card,
   },
   priceRow: {
     flexDirection: 'row',
@@ -248,122 +292,139 @@ const styles = StyleSheet.create({
   },
   priceCurrency: {
     fontSize: 16,
-    fontWeight: '800',
-    color: '#059669',
+    fontFamily: FONTS.bold,
+    color: COLORS.primary,
     marginRight: 4,
   },
   priceAmount: {
     fontSize: 38,
-    fontWeight: '900',
-    color: '#0f172a',
+    fontFamily: FONTS.extraBold,
+    color: COLORS.text,
   },
   priceFrequency: {
     fontSize: 14,
-    color: '#64748b',
+    fontFamily: FONTS.medium,
+    color: COLORS.textMuted,
     marginLeft: 6,
-    fontWeight: '600',
   },
   priceDesc: {
-    fontSize: 12,
-    color: '#475569',
-    marginTop: 6,
+    fontSize: 13,
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
+    marginTop: 4,
     marginBottom: 16,
     lineHeight: 18,
   },
   perksList: {
-    gap: 8,
+    gap: 10,
     borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
+    borderTopColor: COLORS.surfaceMuted,
     paddingTop: 14,
   },
-  perkItem: {
-    fontSize: 12,
-    color: '#334155',
-    fontWeight: '600',
+  perkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  paymentSection: {
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+  perkItem: {
+    fontSize: 13,
+    fontFamily: FONTS.medium,
+    color: COLORS.textSecondary,
   },
   sectionTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0f172a',
-    marginBottom: 12,
+    fontSize: 15,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
+    marginBottom: 14,
   },
   channelsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 10,
     marginBottom: 16,
   },
   channelCard: {
     flex: 1,
     minWidth: '45%',
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.bg,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 12,
+    borderColor: COLORS.borderStrong,
+    borderRadius: RADIUS.md,
     paddingVertical: 12,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 8,
   },
   channelCardSelected: {
-    backgroundColor: '#ecfdf5',
-    borderColor: '#059669',
+    backgroundColor: COLORS.primarySoft,
+    borderColor: COLORS.primary,
   },
-  channelIcon: {
-    fontSize: 20,
+  channelDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   channelLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#475569',
+    fontSize: 12,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textSecondary,
   },
   channelLabelSelected: {
-    color: '#047857',
-    fontWeight: '800',
+    color: COLORS.primaryDark,
+    fontFamily: FONTS.bold,
   },
   inputLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#475569',
-    textTransform: 'uppercase',
-    marginBottom: 6,
+    fontSize: 12,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textSecondary,
+    marginBottom: 8,
   },
-  phoneInput: {
-    backgroundColor: '#f8fafc',
+  inputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: COLORS.bg,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 12,
+    borderColor: COLORS.borderStrong,
+    borderRadius: RADIUS.md,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
-    color: '#0f172a',
+    height: 48,
     marginBottom: 16,
   },
+  phoneInput: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: FONTS.medium,
+    color: COLORS.text,
+  },
   payBtn: {
-    backgroundColor: '#059669',
-    borderRadius: 14,
-    paddingVertical: 15,
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    height: 50,
+    justifyContent: 'center',
     alignItems: 'center',
   },
   btnDisabled: {
     opacity: 0.6,
   },
   payBtnText: {
-    color: '#ffffff',
+    color: COLORS.white,
     fontSize: 14,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
+  },
+  secureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    marginTop: 12,
   },
   secureNote: {
-    fontSize: 10,
-    color: '#94a3b8',
-    textAlign: 'center',
-    marginTop: 12,
-    lineHeight: 14,
+    fontSize: 11,
+    fontFamily: FONTS.regular,
+    color: COLORS.textSubtle,
   },
 });

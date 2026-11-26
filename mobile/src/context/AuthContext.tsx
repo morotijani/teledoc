@@ -24,6 +24,10 @@ export interface DoctorVerification {
   rejectionReason?: string | null;
   specialty: string;
   licenseNumber: string;
+  hospitalAffiliation?: string | null;
+  yearsOfExperience?: number;
+  bio?: string | null;
+  consultationFee?: number | string;
 }
 
 interface AuthContextType {

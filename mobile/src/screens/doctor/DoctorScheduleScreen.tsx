@@ -6,9 +6,11 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { apiClient } from '../../api/client';
+import { useAlert } from '../../context/AlertContext';
+import { COLORS, FONTS, RADIUS, SHADOWS } from '../../theme/theme';
 
 const DEFAULT_WEEK = [
   { dayOfWeek: 0, name: 'Sunday', isActive: false, startTime: '10:00', endTime: '14:00' },
@@ -24,6 +26,7 @@ const START_OPTIONS = ['08:00', '09:00', '10:00', '12:00'];
 const END_OPTIONS = ['13:00', '15:00', '17:00', '19:00'];
 
 export default function DoctorScheduleScreen({ navigation }: any) {
+  const { showAlert } = useAlert();
   const [schedule, setSchedule] = useState<any[]>(DEFAULT_WEEK);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -84,11 +87,18 @@ export default function DoctorScheduleScreen({ navigation }: any) {
         }));
 
       await apiClient.post('/doctors/my/availabilities', { slots: activeSlots });
-      Alert.alert('Schedule Saved', 'Patients can now book 30-min slots matching your updated hours.', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
+      showAlert({
+        type: 'success',
+        title: 'Schedule Saved',
+        message: 'Patients can now book 30-min slots matching your updated hours.',
+        actions: [{ text: 'Done', style: 'primary', onPress: () => navigation.goBack() }],
+      });
     } catch (err: any) {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to update schedule.');
+      showAlert({
+        type: 'error',
+        title: 'Save Failed',
+        message: err.response?.data?.message || 'Failed to update schedule.',
+      });
     } finally {
       setIsSaving(false);
     }
@@ -97,14 +107,18 @@ export default function DoctorScheduleScreen({ navigation }: any) {
   if (isLoading) {
     return (
       <View style={styles.loadingCenter}>
-        <ActivityIndicator size="large" color="#059669" />
+        <ActivityIndicator size="large" color={COLORS.primary} />
         <Text style={styles.loadingText}>Loading your saved schedule...</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.header}>
         <Text style={styles.title}>Weekly Consultation Hours</Text>
         <Text style={styles.subtitle}>
@@ -135,7 +149,7 @@ export default function DoctorScheduleScreen({ navigation }: any) {
             {item.isActive ? (
               <View style={styles.hoursConfigBox}>
                 <View style={styles.hourPickerRow}>
-                  <Text style={styles.timeLabel}>Start:</Text>
+                  <Text style={styles.timeLabel}>Start</Text>
                   <View style={styles.chipGroup}>
                     {START_OPTIONS.map((t) => (
                       <TouchableOpacity
@@ -157,7 +171,7 @@ export default function DoctorScheduleScreen({ navigation }: any) {
                 </View>
 
                 <View style={styles.hourPickerRow}>
-                  <Text style={styles.timeLabel}>End:  </Text>
+                  <Text style={styles.timeLabel}>End</Text>
                   <View style={styles.chipGroup}>
                     {END_OPTIONS.map((t) => (
                       <TouchableOpacity
@@ -179,7 +193,7 @@ export default function DoctorScheduleScreen({ navigation }: any) {
                 </View>
               </View>
             ) : (
-              <Text style={styles.offLabel}>No patient appointments accepted on this day.</Text>
+              <Text style={styles.offLabel}>No appointments accepted on this day.</Text>
             )}
           </View>
         ))}
@@ -189,11 +203,15 @@ export default function DoctorScheduleScreen({ navigation }: any) {
         style={[styles.saveBtn, isSaving && styles.btnDisabled]}
         onPress={handleSaveSchedule}
         disabled={isSaving}
+        activeOpacity={0.85}
       >
         {isSaving ? (
-          <ActivityIndicator color="#ffffff" />
+          <ActivityIndicator color={COLORS.white} />
         ) : (
-          <Text style={styles.saveBtnText}>Save Schedule</Text>
+          <View style={styles.btnInner}>
+            <MaterialIcons name="save" size={18} color={COLORS.white} />
+            <Text style={styles.saveBtnText}>Save Weekly Schedule</Text>
+          </View>
         )}
       </TouchableOpacity>
     </ScrollView>
@@ -203,46 +221,50 @@ export default function DoctorScheduleScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.bg,
   },
   content: {
-    padding: 16,
+    padding: 18,
     gap: 14,
+    paddingBottom: 32,
   },
   loadingCenter: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.bg,
   },
   loadingText: {
     marginTop: 10,
     fontSize: 13,
-    color: '#64748b',
+    fontFamily: FONTS.medium,
+    color: COLORS.textMuted,
   },
   header: {
     marginBottom: 4,
   },
   title: {
     fontSize: 20,
-    fontWeight: '900',
-    color: '#0f172a',
+    fontFamily: FONTS.extraBold,
+    color: COLORS.text,
   },
   subtitle: {
     fontSize: 12,
-    color: '#64748b',
-    marginTop: 2,
-    lineHeight: 16,
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
+    marginTop: 3,
+    lineHeight: 17,
   },
   daysList: {
     gap: 10,
   },
   dayCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 14,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    padding: 16,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: COLORS.border,
+    ...SHADOWS.card,
   },
   dayHeader: {
     flexDirection: 'row',
@@ -251,38 +273,38 @@ const styles = StyleSheet.create({
   },
   dayName: {
     fontSize: 14,
-    fontWeight: '800',
-    color: '#0f172a',
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   toggleBtn: {
     paddingHorizontal: 12,
     paddingVertical: 5,
-    borderRadius: 8,
+    borderRadius: RADIUS.pill,
   },
   toggleActive: {
-    backgroundColor: '#ecfdf5',
+    backgroundColor: COLORS.primarySoft,
     borderWidth: 1,
-    borderColor: '#a7f3d0',
+    borderColor: COLORS.primaryLight,
   },
   toggleInactive: {
-    backgroundColor: '#f1f5f9',
+    backgroundColor: COLORS.surfaceMuted,
   },
   toggleText: {
     fontSize: 11,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
   },
   toggleTextActive: {
-    color: '#059669',
+    color: COLORS.primaryDark,
   },
   toggleTextInactive: {
-    color: '#94a3b8',
+    color: COLORS.textSubtle,
   },
   hoursConfigBox: {
-    marginTop: 10,
+    marginTop: 12,
     gap: 8,
-    paddingTop: 8,
+    paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
+    borderTopColor: COLORS.surfaceMuted,
   },
   hourPickerRow: {
     flexDirection: 'row',
@@ -290,9 +312,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   timeLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#64748b',
+    fontSize: 12,
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textMuted,
   },
   chipGroup: {
     flexDirection: 'row',
@@ -300,44 +322,49 @@ const styles = StyleSheet.create({
   },
   timeOption: {
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: '#f8fafc',
+    paddingVertical: 6,
+    borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.bg,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: COLORS.borderStrong,
   },
   timeOptionActive: {
-    backgroundColor: '#059669',
-    borderColor: '#059669',
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
   timeOptionText: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#475569',
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textSecondary,
   },
   timeOptionTextActive: {
-    color: '#ffffff',
+    color: COLORS.white,
   },
   offLabel: {
-    fontSize: 11,
-    color: '#94a3b8',
-    fontStyle: 'italic',
+    fontSize: 12,
+    fontFamily: FONTS.regular,
+    color: COLORS.textSubtle,
     marginTop: 6,
   },
   saveBtn: {
-    backgroundColor: '#059669',
-    borderRadius: 14,
-    paddingVertical: 14,
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    height: 50,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 20,
+    marginTop: 8,
+  },
+  btnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   btnDisabled: {
     opacity: 0.6,
   },
   saveBtnText: {
-    color: '#ffffff',
+    color: COLORS.white,
     fontSize: 14,
-    fontWeight: '800',
+    fontFamily: FONTS.bold,
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,12 @@ import {
   StyleSheet,
   ActivityIndicator,
   ScrollView,
-  Alert,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { apiClient } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
+import { useAlert } from '../../context/AlertContext';
+import { COLORS, FONTS, RADIUS, SHADOWS } from '../../theme/theme';
 
 const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -19,7 +21,6 @@ function generateUpcomingDates(targetDayOfWeek?: number): Date[] {
   const now = new Date();
 
   if (typeof targetDayOfWeek === 'number') {
-    // Find the next 4 occurrences of targetDayOfWeek starting from tomorrow
     for (let offset = 1; offset <= 28; offset++) {
       const candidate = new Date(now);
       candidate.setDate(now.getDate() + offset);
@@ -30,7 +31,6 @@ function generateUpcomingDates(targetDayOfWeek?: number): Date[] {
       }
     }
   } else {
-    // Next 5 days starting tomorrow
     for (let offset = 1; offset <= 5; offset++) {
       const candidate = new Date(now);
       candidate.setDate(now.getDate() + offset);
@@ -60,12 +60,20 @@ function generate30MinWindows(startStr = '09:00', endStr = '15:00'): { start: st
   return windows.length > 0 ? windows : [{ start: '10:00', end: '10:30' }];
 }
 
+interface BookedSlot {
+  scheduledStart: string;
+  scheduledEnd: string;
+}
+
 export default function BookAppointmentScreen({ route, navigation }: any) {
   const { doctor, slot } = route.params;
   const { subscription } = useAuth();
+  const { showAlert } = useAlert();
   const [symptoms, setSymptoms] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [bookedSlots, setBookedSlots] = useState<BookedSlot[]>([]);
+  const [isLoadingSlots, setIsLoadingSlots] = useState(true);
 
   const availableDates = useMemo(
     () => generateUpcomingDates(slot?.dayOfWeek),
@@ -77,12 +85,61 @@ export default function BookAppointmentScreen({ route, navigation }: any) {
   );
 
   const [selectedDateIndex, setSelectedDateIndex] = useState(0);
-  const [selectedWindowIndex, setSelectedWindowIndex] = useState(0);
+  const [selectedWindowIndex, setSelectedWindowIndex] = useState<number>(-1);
 
   const selectedDate = availableDates[selectedDateIndex] || availableDates[0];
-  const selectedWindow = timeWindows[selectedWindowIndex] || timeWindows[0];
+  const doctorId = doctor.userId || doctor.user?.id || doctor.id;
+
+  const isWindowBooked = (win: { start: string; end: string }, booked: BookedSlot[]) => {
+    const [sH, sM] = win.start.split(':').map(Number);
+    const [eH, eM] = win.end.split(':').map(Number);
+
+    const winStart = new Date(selectedDate);
+    winStart.setHours(sH, sM, 0, 0);
+
+    const winEnd = new Date(selectedDate);
+    winEnd.setHours(eH, eM, 0, 0);
+
+    if (winStart <= new Date()) return true;
+
+    return booked.some((b) => {
+      const bStart = new Date(b.scheduledStart).getTime();
+      const bEnd = new Date(b.scheduledEnd).getTime();
+      return winStart.getTime() < bEnd && winEnd.getTime() > bStart;
+    });
+  };
+
+  const fetchBookedSlotsForDate = async (dateObj: Date) => {
+    setIsLoadingSlots(true);
+    try {
+      const dateStr = dateObj.toISOString().split('T')[0];
+      const res = await apiClient.get(`/doctors/${doctorId}/booked-slots`, {
+        params: { date: dateStr },
+      });
+      const booked: BookedSlot[] = res.data.bookedSlots || [];
+      setBookedSlots(booked);
+
+      // Automatically select the NEXT AVAILABLE (first unbooked) 30-minute slot
+      const firstOpenIdx = timeWindows.findIndex((w) => !isWindowBooked(w, booked));
+      setSelectedWindowIndex(firstOpenIdx);
+    } catch (err) {
+      console.error('Failed to fetch booked slots:', err);
+      setBookedSlots([]);
+      setSelectedWindowIndex(0);
+    } finally {
+      setIsLoadingSlots(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBookedSlotsForDate(selectedDate);
+  }, [selectedDateIndex]);
+
+  const selectedWindow =
+    selectedWindowIndex >= 0 ? timeWindows[selectedWindowIndex] : null;
 
   const getScheduledTimestamps = () => {
+    if (!selectedWindow) return null;
     const [sH, sM] = selectedWindow.start.split(':').map(Number);
     const [eH, eM] = selectedWindow.end.split(':').map(Number);
 
@@ -96,11 +153,21 @@ export default function BookAppointmentScreen({ route, navigation }: any) {
   };
 
   const handleConfirmBooking = async () => {
+    const timestamps = getScheduledTimestamps();
+    if (!timestamps || !selectedWindow) {
+      showAlert({
+        type: 'warning',
+        title: 'No Available Slot Selected',
+        message: 'All slots on this date are booked. Please pick another date.',
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     setErrorMsg('');
 
     try {
-      const { start, end } = getScheduledTimestamps();
+      const { start, end } = timestamps;
 
       const res = await apiClient.post('/appointments/book', {
         doctorId: doctor.userId || doctor.user?.id,
@@ -110,37 +177,46 @@ export default function BookAppointmentScreen({ route, navigation }: any) {
       });
 
       if (res.data.success) {
-        Alert.alert(
-          '🎉 Appointment Confirmed!',
-          `Your video consultation with ${doctor.user.fullName} is scheduled for ${start.toLocaleDateString()} at ${selectedWindow.start}.`,
-          [
+        showAlert({
+          type: 'success',
+          title: 'Appointment Confirmed',
+          message: `Your video consultation with ${doctor.user.fullName} is scheduled for ${start.toLocaleDateString()} at ${selectedWindow.start}.`,
+          actions: [
             {
-              text: 'View Appointments',
+              text: 'View Schedule',
+              style: 'primary',
               onPress: () => {
                 navigation.popToTop();
                 navigation.getParent()?.navigate('Schedule');
               },
             },
-          ]
-        );
+          ],
+        });
       }
     } catch (err: any) {
       if (err.response?.status === 402) {
-        Alert.alert(
-          'Subscription Required',
-          'Your 90-day free trial has expired. A 10 GHS / month subscription is required to book new appointments.',
-          [
+        showAlert({
+          type: 'warning',
+          title: 'Subscription Required',
+          message:
+            'Your 90-day free trial has expired. A GHS 10 / month subscription is required to book new appointments.',
+          actions: [
+            { text: 'Cancel', style: 'cancel' },
             {
-              text: 'Subscribe via Mobile Money',
+              text: 'Subscribe via MoMo',
+              style: 'primary',
               onPress: () => navigation.getParent()?.navigate('Plan & MoMo'),
             },
-            { text: 'Cancel', style: 'cancel' },
-          ]
-        );
+          ],
+        });
       } else {
+        if (err.response?.status === 409) {
+          // Refresh booked slots and auto-advance to next open slot
+          fetchBookedSlotsForDate(selectedDate);
+        }
         setErrorMsg(
           err.response?.data?.message ||
-            'Failed to book appointment. Please select a different 30-minute time slot.'
+            'Failed to book appointment. Please select another available slot.'
         );
       }
     } finally {
@@ -148,38 +224,47 @@ export default function BookAppointmentScreen({ route, navigation }: any) {
     }
   };
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Confirm Appointment</Text>
-        <Text style={styles.subtitle}>
-          Select your preferred date and 30-minute consultation slot below.
-        </Text>
-      </View>
+  const openSlotsCount = timeWindows.filter((w) => !isWindowBooked(w, bookedSlots)).length;
 
-      {/* Trial Status Card */}
+  return (
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+    >
+      {/* Active Plan Banner */}
       <View style={styles.trialInfoCard}>
-        <Text style={styles.trialTitle}>
-          Active Plan: {subscription?.status === 'TRIAL' ? '90-Day Free Trial Tier' : 'Monthly Subscriber'}
-        </Text>
-        <Text style={styles.trialDesc}>
-          {subscription?.status === 'TRIAL'
-            ? `Your 3-month free trial is currently active (${subscription?.trialDaysRemaining ?? 90} days remaining). Booking this session is completely free.`
-            : 'Your monthly 10 GHS subscription covers unlimited teleconsultations.'}
-        </Text>
+        <View style={styles.trialIconWrap}>
+          <MaterialIcons name="verified-user" size={18} color={COLORS.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.trialTitle}>
+            {subscription?.status === 'TRIAL' ? '90-Day Free Trial Active' : 'Monthly Plan Active'}
+          </Text>
+          <Text style={styles.trialDesc}>
+            {subscription?.status === 'TRIAL'
+              ? `${subscription?.trialDaysRemaining ?? 90} days remaining — booking this session is free.`
+              : 'Your 10 GHS monthly plan covers unlimited teleconsultations.'}
+          </Text>
+        </View>
       </View>
 
       {errorMsg ? (
         <View style={styles.errorBox}>
+          <MaterialIcons name="error-outline" size={18} color={COLORS.danger} />
           <Text style={styles.errorText}>{errorMsg}</Text>
         </View>
       ) : null}
 
-      {/* Step 1: Select Date */}
-      <View style={styles.summaryCard}>
-        <Text style={styles.cardHeader}>
-          1. Select Consultation Date {slot ? `(${DAYS_OF_WEEK[slot.dayOfWeek]}s)` : ''}
-        </Text>
+      {/* Date & Time Picker Card */}
+      <View style={styles.card}>
+        <View style={styles.cardHeaderRow}>
+          <MaterialIcons name="calendar-month" size={18} color={COLORS.primary} />
+          <Text style={styles.cardHeader}>
+            Select Date {slot ? `(${DAYS_OF_WEEK[slot.dayOfWeek]}s)` : ''}
+          </Text>
+        </View>
+
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillsRow}>
           {availableDates.map((d, idx) => {
             const isSelected = idx === selectedDateIndex;
@@ -190,6 +275,7 @@ export default function BookAppointmentScreen({ route, navigation }: any) {
                 key={d.toISOString()}
                 style={[styles.datePill, isSelected && styles.datePillActive]}
                 onPress={() => setSelectedDateIndex(idx)}
+                activeOpacity={0.8}
               >
                 <Text style={[styles.datePillDay, isSelected && styles.datePillTextActive]}>
                   {dayName}
@@ -202,76 +288,111 @@ export default function BookAppointmentScreen({ route, navigation }: any) {
           })}
         </ScrollView>
 
-        {/* Step 2: Select 30-Min Time Window */}
-        <Text style={[styles.cardHeader, { marginTop: 10 }]}>2. Select 30-Minute Time Slot</Text>
-        <View style={styles.timeGrid}>
-          {timeWindows.map((win, idx) => {
-            const isSelected = idx === selectedWindowIndex;
-            return (
-              <TouchableOpacity
-                key={win.start}
-                style={[styles.timeChip, isSelected && styles.timeChipActive]}
-                onPress={() => setSelectedWindowIndex(idx)}
-              >
-                <Text style={[styles.timeChipText, isSelected && styles.timeChipTextActive]}>
-                  {win.start} - {win.end}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+        <View style={[styles.slotTitleBar, { marginTop: 14 }]}>
+          <View style={styles.cardHeaderRow}>
+            <MaterialIcons name="schedule" size={18} color={COLORS.primary} />
+            <Text style={styles.cardHeader}>Available 30-Min Slots</Text>
+          </View>
+          {!isLoadingSlots && (
+            <Text style={styles.openCountText}>
+              {openSlotsCount} of {timeWindows.length} open
+            </Text>
+          )}
         </View>
+
+        {isLoadingSlots ? (
+          <View style={styles.slotsLoading}>
+            <ActivityIndicator size="small" color={COLORS.primary} />
+            <Text style={styles.slotsLoadingText}>Checking live availability...</Text>
+          </View>
+        ) : openSlotsCount === 0 ? (
+          <View style={styles.fullyBookedBox}>
+            <MaterialIcons name="event-busy" size={20} color={COLORS.warning} />
+            <Text style={styles.fullyBookedText}>
+              All slots on this date are booked. Please choose another date above.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.timeGrid}>
+            {timeWindows.map((win, idx) => {
+              const booked = isWindowBooked(win, bookedSlots);
+              const isSelected = !booked && idx === selectedWindowIndex;
+              return (
+                <TouchableOpacity
+                  key={win.start}
+                  style={[
+                    styles.timeChip,
+                    isSelected && styles.timeChipActive,
+                    booked && styles.timeChipBooked,
+                  ]}
+                  onPress={() => {
+                    if (!booked) setSelectedWindowIndex(idx);
+                  }}
+                  disabled={booked}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[
+                      styles.timeChipText,
+                      isSelected && styles.timeChipTextActive,
+                      booked && styles.timeChipTextBooked,
+                    ]}
+                  >
+                    {win.start} – {win.end}
+                  </Text>
+                  {booked && <Text style={styles.bookedTag}>Booked</Text>}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
       </View>
 
-      {/* Doctor & Slot Summary */}
-      <View style={styles.summaryCard}>
+      {/* Summary Card */}
+      <View style={styles.card}>
         <Text style={styles.cardHeader}>Consultation Summary</Text>
 
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Physician:</Text>
+          <Text style={styles.detailLabel}>Physician</Text>
           <Text style={styles.detailValue}>{doctor.user.fullName}</Text>
         </View>
 
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Specialty:</Text>
+          <Text style={styles.detailLabel}>Specialty</Text>
           <Text style={styles.detailValue}>{doctor.specialty}</Text>
         </View>
 
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Hospital:</Text>
-          <Text style={styles.detailValue}>{doctor.hospitalAffiliation || 'Accra Medical Center'}</Text>
-        </View>
-
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Selected Date:</Text>
+          <Text style={styles.detailLabel}>Date</Text>
           <Text style={styles.detailValue}>
             {DAYS_OF_WEEK[selectedDate.getDay()]}, {selectedDate.toLocaleDateString()}
           </Text>
         </View>
 
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Selected Time:</Text>
-          <Text style={[styles.detailValue, { color: '#059669' }]}>
-            {selectedWindow.start} - {selectedWindow.end} (30 mins)
+          <Text style={styles.detailLabel}>Time Window</Text>
+          <Text style={[styles.detailValue, { color: selectedWindow ? COLORS.primary : COLORS.danger }]}>
+            {selectedWindow ? `${selectedWindow.start} – ${selectedWindow.end} (30 min)` : 'None available'}
           </Text>
         </View>
 
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Platform:</Text>
-          <Text style={styles.detailValue}>Agora HD Video / Audio Call</Text>
+          <Text style={styles.detailLabel}>Format</Text>
+          <Text style={styles.detailValue}>HD Video & Chat</Text>
         </View>
       </View>
 
       {/* Symptoms Note */}
-      <View style={styles.notesCard}>
-        <Text style={styles.cardHeader}>Reason for Visit & Symptoms</Text>
+      <View style={styles.card}>
+        <Text style={styles.cardHeader}>Symptoms & Reason for Visit</Text>
         <Text style={styles.notesSubtitle}>
-          Help the doctor prepare by briefly describing your main symptoms or health questions:
+          Briefly describe your symptoms so your doctor can prepare ahead of the call.
         </Text>
 
         <TextInput
           style={styles.textArea}
           placeholder="e.g. Mild chest tightness during morning walk, headache for 2 days..."
-          placeholderTextColor="#94a3b8"
+          placeholderTextColor={COLORS.textSubtle}
           value={symptoms}
           onChangeText={setSymptoms}
           multiline
@@ -280,14 +401,21 @@ export default function BookAppointmentScreen({ route, navigation }: any) {
       </View>
 
       <TouchableOpacity
-        style={[styles.confirmBtn, isSubmitting && styles.btnDisabled]}
+        style={[
+          styles.confirmBtn,
+          (isSubmitting || !selectedWindow || isLoadingSlots) && styles.btnDisabled,
+        ]}
         onPress={handleConfirmBooking}
-        disabled={isSubmitting}
+        disabled={isSubmitting || !selectedWindow || isLoadingSlots}
+        activeOpacity={0.85}
       >
         {isSubmitting ? (
-          <ActivityIndicator color="#ffffff" />
+          <ActivityIndicator color={COLORS.white} />
         ) : (
-          <Text style={styles.confirmBtnText}>Confirm & Book Consultation</Text>
+          <View style={styles.btnInner}>
+            <MaterialIcons name="check-circle-outline" size={18} color={COLORS.white} />
+            <Text style={styles.confirmBtnText}>Confirm & Book Consultation</Text>
+          </View>
         )}
       </TouchableOpacity>
     </ScrollView>
@@ -297,68 +425,86 @@ export default function BookAppointmentScreen({ route, navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.bg,
   },
   content: {
-    padding: 20,
+    padding: 18,
     gap: 16,
-  },
-  header: {
-    marginBottom: 4,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#0f172a',
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#64748b',
-    marginTop: 2,
+    paddingBottom: 32,
   },
   trialInfoCard: {
-    backgroundColor: '#ecfdf5',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: COLORS.primarySoft,
     borderWidth: 1,
-    borderColor: '#a7f3d0',
-    borderRadius: 16,
+    borderColor: COLORS.primaryLight,
+    borderRadius: RADIUS.lg,
     padding: 14,
   },
+  trialIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: COLORS.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   trialTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#047857',
-    marginBottom: 2,
+    fontSize: 13,
+    fontFamily: FONTS.bold,
+    color: COLORS.primaryDark,
   },
   trialDesc: {
-    fontSize: 11,
-    color: '#065f46',
-    lineHeight: 16,
+    fontSize: 12,
+    fontFamily: FONTS.regular,
+    color: COLORS.textSecondary,
+    marginTop: 1,
   },
   errorBox: {
-    backgroundColor: '#fef2f2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.dangerSoft,
     borderWidth: 1,
-    borderColor: '#fecaca',
+    borderColor: COLORS.dangerBorder,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
   },
   errorText: {
-    color: '#b91c1c',
+    flex: 1,
+    color: COLORS.danger,
     fontSize: 12,
-    fontWeight: '600',
+    fontFamily: FONTS.medium,
   },
-  summaryCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
+  card: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: COLORS.border,
     gap: 10,
+    ...SHADOWS.card,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  slotTitleBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  openCountText: {
+    fontSize: 11,
+    fontFamily: FONTS.bold,
+    color: COLORS.primary,
   },
   cardHeader: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0f172a',
-    marginBottom: 4,
+    fontSize: 15,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   pillsRow: {
     gap: 10,
@@ -366,32 +512,60 @@ const styles = StyleSheet.create({
   },
   datePill: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 14,
-    backgroundColor: '#f8fafc',
+    paddingVertical: 11,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.bg,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: COLORS.borderStrong,
     alignItems: 'center',
-    minWidth: 76,
+    minWidth: 80,
   },
   datePillActive: {
-    backgroundColor: '#059669',
-    borderColor: '#059669',
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
   datePillDay: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#64748b',
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textMuted,
     textTransform: 'uppercase',
   },
   datePillNum: {
     fontSize: 13,
-    fontWeight: '900',
-    color: '#0f172a',
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
     marginTop: 2,
   },
   datePillTextActive: {
-    color: '#ffffff',
+    color: COLORS.white,
+  },
+  slotsLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 16,
+    justifyContent: 'center',
+  },
+  slotsLoadingText: {
+    fontSize: 12,
+    fontFamily: FONTS.medium,
+    color: COLORS.textMuted,
+  },
+  fullyBookedBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: COLORS.warningSoft,
+    borderWidth: 1,
+    borderColor: COLORS.warningBorder,
+    borderRadius: RADIUS.md,
+    padding: 12,
+  },
+  fullyBookedText: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: FONTS.medium,
+    color: '#92400E',
   },
   timeGrid: {
     flexDirection: 'row',
@@ -400,24 +574,41 @@ const styles = StyleSheet.create({
   },
   timeChip: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: '#f8fafc',
+    paddingVertical: 9,
+    borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.bg,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: COLORS.border,
+    alignItems: 'center',
   },
   timeChipActive: {
-    backgroundColor: '#ecfdf5',
-    borderColor: '#059669',
+    backgroundColor: COLORS.primarySoft,
+    borderColor: COLORS.primary,
+  },
+  timeChipBooked: {
+    backgroundColor: COLORS.surfaceMuted,
+    borderColor: COLORS.border,
+    opacity: 0.65,
   },
   timeChipText: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#475569',
+    fontFamily: FONTS.semiBold,
+    color: COLORS.textSecondary,
   },
   timeChipTextActive: {
-    color: '#059669',
-    fontWeight: '900',
+    color: COLORS.primaryDark,
+    fontFamily: FONTS.bold,
+  },
+  timeChipTextBooked: {
+    color: COLORS.textSubtle,
+    textDecorationLine: 'line-through',
+  },
+  bookedTag: {
+    fontSize: 9,
+    fontFamily: FONTS.bold,
+    color: COLORS.danger,
+    textTransform: 'uppercase',
+    marginTop: 2,
   },
   detailRow: {
     flexDirection: 'row',
@@ -426,53 +617,52 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   detailLabel: {
-    fontSize: 12,
-    color: '#64748b',
-    fontWeight: '600',
+    fontSize: 13,
+    fontFamily: FONTS.medium,
+    color: COLORS.textMuted,
   },
   detailValue: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#1e293b',
-  },
-  notesCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    fontSize: 13,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
   },
   notesSubtitle: {
     fontSize: 12,
-    color: '#64748b',
-    marginBottom: 10,
-    lineHeight: 16,
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
+    lineHeight: 17,
   },
   textArea: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.bg,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 12,
-    padding: 12,
+    borderColor: COLORS.borderStrong,
+    borderRadius: RADIUS.md,
+    padding: 14,
     fontSize: 13,
-    color: '#0f172a',
-    height: 90,
+    fontFamily: FONTS.regular,
+    color: COLORS.text,
+    height: 96,
     textAlignVertical: 'top',
   },
   confirmBtn: {
-    backgroundColor: '#059669',
-    borderRadius: 14,
-    paddingVertical: 15,
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    height: 52,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 20,
+    ...SHADOWS.card,
+  },
+  btnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   btnDisabled: {
-    opacity: 0.6,
+    opacity: 0.55,
   },
   confirmBtnText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '800',
+    color: COLORS.white,
+    fontSize: 15,
+    fontFamily: FONTS.bold,
   },
 });
